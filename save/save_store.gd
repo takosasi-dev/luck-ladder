@@ -80,6 +80,11 @@ func clear_current(mode: String) -> void:
 		write()
 
 
+func set_tutorial_done(done: bool) -> void:
+	data["tutorial_done"] = done
+	write()
+
+
 func is_first_daily(date: String) -> bool:
 	return not data["daily"].has(date)
 

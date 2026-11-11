@@ -89,6 +89,13 @@ func quote(side: String) -> int:
 	return quote_value(remaining(), winners(side), streak)
 
 
+# 倍率を掛ける前の元の値(ボタンの点の色の段を決めるのに使う。§9.1)。
+func base_quote(side: String) -> int:
+	if ended != "" or not side in SIDES:
+		return 0
+	return quote_value(remaining(), winners(side), 0)
+
+
 # 結果: {result: "hit"/"miss"/"invalid", side, n, w, gain, card, pot_lost, life_up, ended}
 func guess(side: String) -> Dictionary:
 	var gain := quote(side)

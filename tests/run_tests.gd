@@ -15,6 +15,7 @@ const ShareText := preload("res://core/share_text.gd")
 const Codec := preload("res://core/save_codec.gd")
 const SaveStore := preload("res://save/save_store.gd")
 const Fx := preload("res://tests/fixtures.gd")
+const PlayLayout := preload("res://ui/layout/play_layout.gd")
 
 const FONT_PATH := "res://assets/fonts/NotoSansJP-Variable.ttf"
 const STRINGS_PATH := "res://core/strings.gd"
@@ -642,6 +643,65 @@ func test_unwritable_store() -> String:
 	var res: Dictionary = store.finish_run(_play("P1", "LL1:test:1")[1], "2026-11-11", 315)
 	if store.data["totals"]["runs"] != 1 or not "A-01" in res["new_achievements"]:
 		return "records must stay in memory"
+	return ""
+
+
+# ---- Phase 2 ----
+
+# AC-22 の一部: FR-4 の要素がすべて画面の中にあり、重ならない。ボタンの大きさ(§9.1・INV-11)。
+func test_play_layout() -> String:
+	var need := ["pause", "score", "lives", "ladder", "deck", "deck_label", "card", "pot", "counter", "high", "same", "bank", "low"]
+	for landscape in [true, false]:
+		var r: Dictionary = PlayLayout.rects(landscape)
+		var screen := Rect2(Vector2.ZERO, PlayLayout.size(landscape))
+		var tag := "landscape" if landscape else "portrait"
+		for k in need:
+			if not r.has(k):
+				return "%s: missing %s" % [tag, k]
+		var keys: Array = r.keys()
+		for i in keys.size():
+			if not screen.encloses(r[keys[i]]):
+				return "%s: %s is outside the screen" % [tag, keys[i]]
+			for j in range(i + 1, keys.size()):
+				if r[keys[i]].intersects(r[keys[j]]):
+					return "%s: %s overlaps %s" % [tag, keys[i], keys[j]]
+		for k in ["high", "low", "same", "bank"]:
+			if r[k].size.x < 96 or r[k].size.y < 96:
+				return "%s: %s smaller than 96x96" % [tag, k]
+		var hl := Vector2(280, 120) if landscape else Vector2(660, 110)
+		var sb := Vector2(136, 120) if landscape else Vector2(320, 110)
+		for k in ["high", "low"]:
+			if r[k].size.x < hl.x or r[k].size.y < hl.y:
+				return "%s: %s size %s" % [tag, k, str(r[k].size)]
+		for k in ["same", "bank"]:
+			if r[k].size.x < sb.x or r[k].size.y < sb.y:
+				return "%s: %s size %s" % [tag, k, str(r[k].size)]
+		if not (r["high"].position.y < r["same"].position.y and r["same"].position.y < r["low"].position.y and r["same"].position.x < r["bank"].position.x):
+			return "%s: order must be HIGH / SAME BANK / LOW" % tag
+		if not landscape:
+			for k in ["high", "low", "same", "bank"]:
+				if r[k].position.y < 768:
+					return "portrait: %s above y 768" % k
+	return ""
+
+
+# FR-16: 途中のランを、状態と集計値ごと復元する。
+func test_rebuild_with_stats() -> String:
+	var played := _play("P1", "LL1:test:14")
+	var st = played[0]
+	var s = played[1]
+	var r := RunStats.rebuild("LL1:test:14", st.actions, "run", false, true)
+	if not r["ok"]:
+		return "rebuild failed"
+	var a = r["stats"]
+	for k in ["draws", "hits", "misses", "banks", "best_streak", "max_gain", "max_bank", "longshot_hits", "score", "cleared", "end_lives"]:
+		if a.get(k) != s.get(k):
+			return "%s: %s vs %s" % [k, str(a.get(k)), str(s.get(k))]
+	if RunStats.rebuild("LL1:test:14", "BHL", "run", false, true)["ok"]:
+		return "bank with empty pot must fail"
+	var part := RunStats.rebuild("LL1:test:14", st.actions.substr(0, 10), "run", false, true)
+	if not part["ok"] or part["state"].actions != st.actions.substr(0, 10):
+		return "partial rebuild"
 	return ""
 
 

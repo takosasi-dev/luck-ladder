@@ -2,6 +2,8 @@
 # 実績(achievements.gd)は、この値と通算の値だけを見る。
 extends RefCounted
 
+const RunState := preload("res://core/run_state.gd")
+
 var mode := "run"
 var first_daily := false
 var counter_shown := false
@@ -87,6 +89,24 @@ func _sync_end(st) -> void:
 	score = st.score
 	end_lives = st.lives
 	cleared = st.ended == "clear"
+
+
+# 途中のランの復元(FR-16・D-10): 種と操作の列を流し直し、ランの状態と集計値を一緒に作る。
+# 結果: {ok, state, stats}。途中で invalid が出たら ok は偽(E-9)。
+static func rebuild(seed_text: String, action_text: String, mode_value: String, first_daily_value: bool, shown: bool) -> Dictionary:
+	var st = RunState.new(seed_text)
+	var s = new(mode_value, first_daily_value)
+	s.counter_shown = shown
+	for i in action_text.length():
+		var a := action_text[i]
+		var res: Dictionary = st.apply(a)
+		if res["result"] == "invalid":
+			return {"ok": false, "state": null, "stats": null}
+		if a == "B":
+			s.on_bank(res, st)
+		else:
+			s.on_guess(res, st)
+	return {"ok": true, "state": st, "stats": s}
 
 
 # 実績と通算に数えるラン(D-9: 今日の山札の 2 回目からは数えない)。

@@ -6,6 +6,67 @@ const TITLE := "LuckLadder"
 const SUBTITLE := "ハイ&ローの梯子"
 const VERSION_PREFIX := "v"
 
+# タイトル(Phase 2 は「ラン」と「つづきから」だけ)
+const BTN_RUN := "ラン"
+const BTN_CONTINUE := "つづきから"
+const CONFIRM_DISCARD := "途中のランを捨てて新しく始めますか"
+const BTN_DISCARD := "捨てて始める"
+const BTN_CANCEL := "やめる"
+const RESTORE_FAILED := "前回の途中のランは復元できませんでした"
+const FIXED_OK := "固定値 一致"
+const FIXED_NG := "固定値 不一致"
+
+# プレイ(FR-4・§9.1)
+const BTN_PAUSE := "一時停止"
+const SCORE := "得点 %s"
+const MODE_RUN := "ラン"
+const LIVES := "ライフ "
+const LIFE_ON := "●"
+const LIFE_OFF := "○"
+const DECK_LEFT := "残り %d"
+const POT := "ポット %s"
+const BTN_HIGH := "▲ HIGH"
+const BTN_LOW := "▼ LOW"
+const BTN_SAME := "= 同じ"
+const BTN_BANK := "確保"
+const QUOTE := "+%s"
+const QUOTE_NONE := "なし"
+const BANK_EMPTY := "—"
+const STREAK := "%d 連続"
+const MULT := "x%d.%d"
+const RANKS := ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+const ST_HIT := "○ 当たり +%s"
+const ST_SAME := "◎ ぴたり +%s"
+const ST_MISS := "× 外れ"
+const ST_LIFE_UP := "  ライフ +1"
+const ST_BANKED := "確保 +%s"
+const ST_CLEAR := "完走"
+const TUT_1 := "次の札は、大きい? 小さい?"
+const TUT_2 := "当てた点はポットに貯まる。外すと 0"
+const TUT_3 := "確保すると自分の点になる"
+
+# 一時停止(FR-24)
+const PAUSED := "一時停止"
+const BTN_RESUME := "つづける"
+const BTN_TO_TITLE := "タイトルへ"
+const PAUSE_NOTE := "途中のランは保存されます"
+
+# 結果(FR-13)
+const RESULT_GAMEOVER := "ラン終了"
+const RESULT_CLEAR := "完走"
+const RESULT_POINTS := "%s 点"
+const RESULT_DRAWS := "めくった枚数 %d"
+const RESULT_HITS := "当たり %d / 外れ %d"
+const RESULT_SAME := "「同じ」の当たり %d"
+const RESULT_STREAK := "最大の連続 %d"
+const RESULT_BANKS := "確保 %d 回"
+const RESULT_BEST := "自己ベスト更新"
+const RESULT_ACH := "達成した実績: %s"
+const RESULT_UNLOCK := "解放: %s"
+const RESULT_TITLE_UP := "称号が「%s」に上がりました"
+const BTN_RETRY := "もう一度"
+const LIST_SEP := "、"
+
 # 保存の既定値(§9.10)。後ろに 2 桁の数字を付ける
 const DEFAULT_NAME := "プレイヤー"
 
@@ -67,12 +128,3 @@ const CARD_BACKS := {
 	"B-05": "白磁の点", "B-06": "夜空", "B-07": "金の放射", "B-08": "黒曜",
 }
 const TABLES := {"T-01": "ミッドナイト", "T-02": "ワイン", "T-03": "森", "T-04": "砂", "T-05": "墨"}
-
-# Phase 0 の見本と診断表示(Phase 4 で消す)
-const DEMO_LANDSCAPE := "横長"
-const DEMO_PORTRAIT := "縦長"
-const DEMO_BOXES := ["箱 1", "箱 2", "箱 3"]
-const DIAG_HEAD := "診断"
-const DIAG_OK := "一致"
-const DIAG_NG := "不一致"
-const DIAG_WINDOW := "窓"
