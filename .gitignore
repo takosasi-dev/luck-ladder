@@ -1,0 +1,9 @@
+# Godot
+.godot/
+/build/
+*.tmp
+
+# OS / エディター
+.DS_Store
+Thumbs.db
+.vscode/

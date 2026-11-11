@@ -1,0 +1,80 @@
+# テスト → Web 書き出し → GitHub Pages へ配置(仕様書 §9.14)。
+# テストが落ちたら build ジョブが失敗し、deploy ジョブは走らない(INV-8)。
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: 4.7.2-stable
+  # 書き出しテンプレートのフォルダ名(GODOT_VERSION_FULL_CONFIG)
+  GODOT_TEMPLATE_DIR: 4.7.2.stable
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Godot 本体と書き出しテンプレートを取得
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}"
+          mkdir -p "$HOME/godot"
+          cd "$HOME/godot"
+          curl -fsSL -o godot.zip "$base/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}_linux.x86_64" godot
+          # ._sc_ があると自己完結モードになり、テンプレートを editor_data/export_templates/ から読む
+          touch ._sc_
+          tdir="editor_data/export_templates/${GODOT_TEMPLATE_DIR}"
+          mkdir -p "$tdir"
+          curl -fsSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}_export_templates.tpz"
+          unzip -q -j templates.tpz templates/web_nothreads_release.zip templates/web_nothreads_debug.zip templates/version.txt -d "$tdir"
+          rm godot.zip templates.tpz
+          echo "templates: $HOME/godot/$tdir"
+          ls -la "$tdir"
+          echo "$HOME/godot" >> "$GITHUB_PATH"
+
+      - name: インポート
+        run: godot --headless --import
+
+      - name: テスト
+        run: godot --headless --script res://tests/run_tests.gd
+
+      - name: Web 書き出し
+        run: |
+          set -euo pipefail
+          mkdir -p build/web
+          godot --headless --export-release "Web" build/web/index.html
+          ls -la build/web
+          test -f build/web/index.html
+          test -f build/web/index.wasm
+          test -f build/web/index.pck
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
