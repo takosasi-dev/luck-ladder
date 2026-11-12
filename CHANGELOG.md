@@ -2,6 +2,12 @@
 
 書き方は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/)、版の付け方は [セマンティック バージョニング](https://semver.org/lang/ja/) に従います。
 
+## [Unreleased]
+
+### Added
+
+- 対戦の接続を確かめるための、実験用の画面(URL の後ろに `?lab=1` を付けて開く。タイトルの「対戦」は準備中のまま)
+
 ## [0.2.0] - 2026-11-12
 
 ブラックジャックとビデオポーカーを足した版です。

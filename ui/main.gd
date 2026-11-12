@@ -18,6 +18,8 @@ const Play := preload("res://ui/screens/play.gd")
 const Result := preload("res://ui/screens/result.gd")
 const Settings := preload("res://ui/screens/settings.gd")
 const SaveData := preload("res://ui/screens/save_data.gd")
+const NetLab := preload("res://ui/screens/net_lab.gd")
+const BrowserBridge := preload("res://net/browser_bridge.gd")
 const PAGES := {
 	"achievements": preload("res://ui/screens/achievements.gd"),
 	"records": preload("res://ui/screens/records.gd"),
@@ -32,6 +34,7 @@ const PORTRAIT := Vector2i(720, 1280)
 var save
 var sfx
 var bgm
+var bridge
 var bg_shader: ColorRect
 var bg_plain: ColorRect
 var bg_gradient: Gradient
@@ -62,7 +65,13 @@ func _ready() -> void:
 	apply_settings()
 	# size_changed の中で content_scale_size を変えると、窓の側の計算が古い縦横比で上書きするので、後回しにする
 	get_tree().root.size_changed.connect(_on_window_resized, CONNECT_DEFERRED)
-	show_title()
+	# Phase 6 の接続実験: URL に lab= か、招待(j=)・返事(a=)が付いて開かれたら、実験の画面を出す
+	bridge = BrowserBridge.new()
+	var query: String = bridge.url_query()
+	if RegEx.create_from_string("[?&](lab|j|a)=").search(query):
+		show_lab(query)
+	else:
+		show_title()
 	_on_window_resized()
 
 
@@ -247,6 +256,13 @@ func show_title() -> void:
 	title.daily_pressed.connect(start_daily)
 	title.page_pressed.connect(_open_page)
 	_swap(title)
+
+
+func show_lab(query: String) -> void:
+	var lab := NetLab.new()
+	lab.setup(self, bridge, query)
+	lab.back_pressed.connect(show_title)
+	_swap(lab)
 
 
 func _open_page(page: String) -> void:

@@ -34,6 +34,9 @@ const BlackjackScreen := preload("res://ui/screens/blackjack.gd")
 const Main := preload("res://ui/main.gd")
 const Poker := preload("res://core/poker_rules.gd")
 const PokerScreen := preload("res://ui/screens/poker.gd")
+const Invite := preload("res://core/invite_codec.gd")
+const BrowserBridge := preload("res://net/browser_bridge.gd")
+const NetLab := preload("res://ui/screens/net_lab.gd")
 
 const FONT_PATH := "res://assets/fonts/NotoSansJP-Variable.ttf"
 const STRINGS_PATH := "res://core/strings.gd"
@@ -1515,6 +1518,213 @@ func test_no_money_words() -> String:
 			if t.contains(word):
 				return "strings.gd has a money word: " + t
 	return ""
+
+
+# ---- Phase 6(対戦の接続実験) ----
+
+# 招待か返事の項目を 1 つ作る。候補は、外向き 1 つと、自分の機械 0〜2 つ。
+func _invite_items(kind: int, cand_count: int, derived: bool) -> Dictionary:
+	var fp := PackedByteArray()
+	for i in Invite.FP_SIZE:
+		fp.append((i * 37 + cand_count * 11 + kind) % 256)
+	var cands := []
+	for i in cand_count:
+		cands.append({"type": Invite.CAND_SRFLX if i == 0 else Invite.CAND_HOST, "ip": [203, 0, 113, 5 + i], "port": 50000 + i})
+	return {
+		"kind": kind, "fp": fp, "derived": derived, "ufrag": "" if derived else "Ab+/", "pwd": "" if derived else "abcdefghijklmnopqrstuv+/",
+		"cands": cands, "reply_to": 0x1234 if kind == Invite.KIND_ANSWER else 0,
+	}
+
+
+# コードの中身(検査値の 2 バイトを除いたバイト列)。形の崩れたコードを作るのに使う。
+func _code_body(code: String) -> PackedByteArray:
+	var bytes := Marshalls.base64_to_raw(code.replace("-", "+").replace("_", "/") + "=".repeat((4 - code.length() % 4) % 4))
+	return bytes.slice(0, bytes.size() - 2)
+
+
+# AC-30: 項目 → コード → 項目が元に戻る。1 文字でも違えば落ちる。形の崩れた物で落ち、例外を出さない。
+func test_invite_codec() -> String:
+	if Invite.crc16("123456789".to_ascii_buffer()) != 0x29B1:
+		return "crc16 of 123456789 must be 0x29B1"
+	for kind in [Invite.KIND_INVITE, Invite.KIND_ANSWER]:
+		for n in [1, 2, 3]:
+			for derived in [false, true]:
+				var items := _invite_items(kind, n, derived)
+				var code := Invite.encode(items)
+				var res := Invite.decode(code, kind)
+				if code == "" or res["error"] != "" or res["items"] != items or Invite.encode(res["items"]) != code:
+					return "round trip kind %d cands %d derived %s: %s" % [kind, n, derived, res["error"]]
+				if res["check"] != Invite.crc16(_code_body(code)):
+					return "check must be the crc of the body"
+				var other: int = Invite.KIND_ANSWER if kind == Invite.KIND_INVITE else Invite.KIND_INVITE
+				if Invite.decode(code, other)["error"] != "kind":
+					return "a code of the other kind must be told apart"
+	var code := Invite.encode(_invite_items(Invite.KIND_INVITE, 1, false))
+	for i in code.length():
+		var changed := code.substr(0, i) + ("B" if code[i] == "A" else "A") + code.substr(i + 1)
+		if Invite.decode(changed, Invite.KIND_INVITE)["error"] == "":
+			return "a code with character %d changed must fail" % i
+	# 形の崩れた物。中身の位置: 0 = 版と種類、40 = 合言葉 pwd の 1 文字目、64 = 候補の数、66〜69 = IP、70・71 = ポート
+	var body := _code_body(code)
+	var cases := {"": "bad", "A".repeat(39): "bad", code.substr(0, 20) + "!" + code.substr(21): "bad", code + "=": "bad", code.left(-3): "bad"}
+	for change in [[0, 0x21, "version"], [0, 0x13, "bad"], [1, 2, "bad"], [40, 10, "bad"], [40, 0, "bad"], [64, 0, "bad"], [64, 4, "bad"], [65, 3, "bad"]]:
+		var b := body.duplicate()
+		b[change[0]] = change[1]
+		cases[Invite.pack(b)] = change[2]
+	for zeroed in [[66, 67, 68, 69], [70, 71]]:
+		var b := body.duplicate()
+		for i in zeroed:
+			b[i] = 0
+		cases[Invite.pack(b)] = "bad"
+	var no_cands := body.slice(0, 64)
+	no_cands.append(0)
+	cases[Invite.pack(no_cands)] = "bad"
+	for text in cases:
+		if Invite.decode(text, Invite.KIND_INVITE)["error"] != cases[text]:
+			return "decode of a broken code (%d chars) gave %s, want %s" % [text.length(), Invite.decode(text, Invite.KIND_INVITE)["error"], cases[text]]
+	# 検査を通らない項目からは、コードを作らない
+	for change in [["ufrag", "a\nb"], ["pwd", ""], ["fp", PackedByteArray([1, 2, 3])], ["cands", []], ["reply_to", 5], ["kind", 3],
+			["cands", [{"type": 1, "ip": [0, 0, 0, 0], "port": 5}]], ["cands", [{"type": 1, "ip": [10, 0, 0, 1], "port": 70000}]], ["cands", [{"type": 3, "ip": [10, 0, 0, 1], "port": 5}]]]:
+		var items := _invite_items(Invite.KIND_INVITE, 1, false)
+		items[change[0]] = change[1]
+		if Invite.encode(items) != "":
+			return "encode must refuse a bad %s" % change[0]
+	for junk in [null, 5, "x", [], {}]:
+		if Invite.encode(junk) != "" or Invite.to_sdp(junk) != "":
+			return "encode and to_sdp must refuse junk"
+	return ""
+
+
+# AC-31: 貼られた文字からコードを取り出す。招待の欄に返事を渡すと、取り違えと分かる。
+func test_invite_extract() -> String:
+	var code := Invite.encode(_invite_items(Invite.KIND_INVITE, 2, false))
+	var url := "https://example.github.io/luck-ladder/?j=" + code
+	for text in [url, "hello\n" + url + "\nbye", code, "  " + code + "\r\n", url + "&lab=log", "?lab=log&j=" + code, "see " + code + " ok"]:
+		if Invite.extract(text) != code:
+			return "extract from: " + text.c_escape().left(60)
+	if Invite.extract("no code in this text") != "" or Invite.extract("") != "":
+		return "extract must return nothing when there is no code"
+	var answer := Invite.encode(_invite_items(Invite.KIND_ANSWER, 1, true))
+	var got := Invite.extract("https://example.github.io/luck-ladder/?a=" + answer)
+	if got != answer or Invite.decode(got, Invite.KIND_INVITE)["error"] != "kind":
+		return "an answer in the invite slot must be reported as the wrong kind"
+	return ""
+
+
+# AC-32 と §9.16 の行き来: 復元した接続情報に仕込んだ改行が入らない。自分の接続情報から項目を取り出せる。
+func test_invite_sdp() -> String:
+	var items := _invite_items(Invite.KIND_INVITE, 2, false)
+	var sdp := Invite.to_sdp(items)
+	var lines := sdp.split("\r\n")
+	if lines.size() != 16 or lines[15] != "" or not "a=ice-ufrag:Ab+/" in lines or not "a=ice-pwd:abcdefghijklmnopqrstuv+/" in lines or not "a=setup:actpass" in lines:
+		return "offer text: " + sdp.c_escape()
+	for line in lines:
+		if line.contains("\r") or line.contains("\n"):
+			return "a line holds a line break"
+	if not "a=setup:active" in Invite.to_sdp(_invite_items(Invite.KIND_ANSWER, 1, false)).split("\r\n"):
+		return "an answer must be written as active"
+	for bad in ["ab\r\na=evil:1", "ab cd", "a\tb", ""]:
+		for key in ["ufrag", "pwd"]:
+			var broken := items.duplicate(true)
+			broken[key] = bad
+			if Invite.to_sdp(broken) != "" or not Invite.candidate_lines(broken).is_empty():
+				return "to_sdp must refuse %s %s" % [key, bad.c_escape()]
+	# 復元した文と候補の行から、同じ項目が取り出せる
+	var back := Invite.from_sdp(sdp, Array(Invite.candidate_lines(items)), false)
+	for key in ["fp", "ufrag", "pwd", "cands", "derived"]:
+		if back.get(key) != items[key]:
+			return "from_sdp(to_sdp) lost " + key
+	# 候補の選び方: UDP の IPv4 だけ、外向きを先に、3 つまで
+	var cand_lines := [
+		"candidate:1 1 udp 2113937151 0a1b2c3d-4e5f-6789-abcd-ef0123456789.local 54400 typ host generation 0",
+		"candidate:2 1 udp 2122260223 192.168.1.5 54400 typ host generation 0",
+		"candidate:3 1 tcp 1518280447 192.168.1.5 9 typ host tcptype active",
+		"a=candidate:4 1 UDP 1686052607 203.0.113.9 61000 typ srflx raddr 192.168.1.5 rport 54400",
+		"candidate:5 1 udp 2122197247 2001:db8::1 54401 typ host",
+		"candidate:6 1 udp 41885695 198.51.100.7 3478 typ relay raddr 0.0.0.0 rport 0",
+		"candidate:7 1 udp 2122260223 192.168.1.5 54400 typ host",
+		"candidate:8 1 udp 2122260223 300.1.1.1 54400 typ host",
+		"candidate:9 1 udp 2122260223 10.0.0.2 0 typ host",
+		"junk", "", "candidate:10 1 udp 2113937151 not-a-uuid.local 54400 typ host",
+	]
+	var picked := Invite.pick_candidates(cand_lines)
+	var want := [{"type": Invite.CAND_SRFLX, "ip": [203, 0, 113, 9], "port": 61000}, {"type": Invite.CAND_HOST, "ip": [192, 168, 1, 5], "port": 54400}]
+	if picked != want:
+		return "picked candidates: " + str(picked)
+	# 実験用の足し: .local の名前の候補は、頼んだときだけ載る。コードと候補の行を行き来しても同じ名前に戻る
+	var mdns := {"type": Invite.CAND_MDNS, "name": "0a1b2c3d4e5f6789abcdef0123456789".hex_decode(), "port": 54400}
+	picked = Invite.pick_candidates(cand_lines, true)
+	if picked != [want[0], mdns, want[1]]:
+		return "picked candidates with names: " + str(picked)
+	var named := _invite_items(Invite.KIND_ANSWER, 1, false)
+	named["cands"] = picked
+	var named_back := Invite.decode(Invite.encode(named), Invite.KIND_ANSWER)
+	if named_back["error"] != "" or named_back["items"] != named or Invite.pick_candidates(Array(Invite.candidate_lines(named)), true) != picked:
+		return "a name candidate must survive the code and the candidate line"
+	if not Invite.candidate_lines(named)[1].contains(" 0a1b2c3d-4e5f-6789-abcd-ef0123456789.local 54400 typ host"):
+		return "name candidate line: " + Invite.candidate_lines(named)[1]
+	# 合言葉を省く手: 書き換えた自分の文と、相手が復元する文とで、合言葉が同じになる
+	var munged := Invite.munge(sdp)
+	var made := Invite.derive(items["fp"])
+	var derived_items := _invite_items(Invite.KIND_INVITE, 2, true)
+	derived_items["fp"] = items["fp"]
+	if not Invite.is_ice_text(made[0]) or not Invite.is_ice_text(made[1]) or made[0].length() != 4 or made[1].length() != 24:
+		return "derived credentials: " + str(made)
+	for line in ["a=ice-ufrag:" + made[0], "a=ice-pwd:" + made[1]]:
+		if not line in munged.split("\r\n") or not line in Invite.to_sdp(derived_items).split("\r\n"):
+			return "both sides must use the derived credentials"
+	if munged.split("\r\n").size() != lines.size() or Invite.from_sdp(munged, [], true)["fp"] != items["fp"]:
+		return "munge must only rewrite the two credential lines"
+	return ""
+
+
+# AC-37: JavaScriptBridge は net/browser_bridge.gd にだけあり、JavaScript の文を文字列で実行していない。
+func test_js_bridge_only_in_bridge() -> String:
+	var word := "JavaScript" + "Bridge"
+	for dir in ["res://core", "res://ui", "res://save", "res://audio", "res://net"]:
+		for file in _gd_files(dir):
+			var code := _code_only(file)
+			if file == "res://net/browser_bridge.gd":
+				if code.contains(word + ".eval") or not code.contains(word):
+					return "browser_bridge.gd must use the bridge without eval"
+			elif code.contains(word):
+				return file + " uses " + word
+	return ""
+
+
+# 実験の画面が、ブラウザの外でも両方の配置に組めて、読めない文字を貼られても落ちない。
+func test_net_lab_builds() -> String:
+	Tokens.apply_settings({})
+	var app := StubApp.new(_fresh_store(), root)
+	var bridge = BrowserBridge.new()
+	if bridge.url_query() != "" or bridge.can_read_clipboard() or bridge.can_share() or bridge.can_broadcast() or bridge.send_answer("x"):
+		return "outside a browser the bridge must report that nothing is available"
+	var lab = NetLab.new()
+	lab.setup(app, bridge, "?lab=1")
+	root.add_child(lab)
+	for l in [true, false]:
+		lab.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+	var err := ""
+	lab._take_text("not a code", "box")
+	if lab.status.text != S.NET_UNREADABLE or lab.rtc != null:
+		err = "junk text must be refused without starting a connection"
+	var v2 := _code_body(Invite.encode(_invite_items(Invite.KIND_INVITE, 1, false)))
+	v2[0] = 0x21
+	lab._take_text("https://example.github.io/luck-ladder/?j=" + Invite.pack(v2), "box")
+	if err == "" and lab.status.text != S.NET_VERSION:
+		err = "a code of another version must say so"
+	# 招待を作っていないのに返事が来た(E-25)
+	lab._take_text(Invite.encode(_invite_items(Invite.KIND_ANSWER, 1, false)), "box")
+	if err == "" and (lab.status.text != S.NET_UNREADABLE or lab.rtc != null):
+		err = "an answer without an invite must be refused"
+	bridge.read_clipboard()
+	if err == "" and lab.status.text != S.NET_PASTE_FAILED:
+		err = "a refused clipboard must show the fallback line"
+	if err == "" and lab._mask("candidate:1 1 udp 1 203.0.113.9 61000 typ srflx raddr 192.168.1.5 rport 54400").contains("203") :
+		err = "the record must hide addresses"
+	lab.free()
+	app.free_nodes()
+	return err
 
 
 # ---- ソースの決まり ----
