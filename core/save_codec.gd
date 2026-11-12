@@ -14,6 +14,12 @@ const TOTAL_KEYS := ["runs", "clears", "total_score", "best_score", "best_streak
 const MODES := ["run", "daily", "versus"]
 const RUN_KEYS := ["mode", "seed_text", "date", "actions", "counter_shown"]
 const SEED_TEXT_MAX := 64
+# 追補 1 §8: [項目, 上限, 既定値]。下限はどれも 0
+const CASINO_KEYS := [
+	["wallet", B.WALLET_MAX, B.WALLET_START], ["wallet_peak", B.WALLET_MAX, B.WALLET_START], ["refills", B.SAVE_INT_MAX, 0],
+	["bj_hands", B.SAVE_INT_MAX, 0], ["bj_wins", B.SAVE_INT_MAX, 0], ["bj_naturals", B.SAVE_INT_MAX, 0],
+	["pk_hands", B.SAVE_INT_MAX, 0], ["pk_paid", B.SAVE_INT_MAX, 0], ["pk_best", 9, 0],
+]
 
 
 static func default_name(two_digits: int) -> String:
@@ -24,7 +30,11 @@ static func defaults(name: String = "") -> Dictionary:
 	var totals := {}
 	for k in TOTAL_KEYS:
 		totals[k] = 0
+	var casino := {}
+	for k in CASINO_KEYS:
+		casino[k[0]] = k[2]
 	return {
+		"casino": casino,
 		"version": VERSION,
 		"tutorial_done": false,
 		"settings": {
@@ -168,6 +178,11 @@ static func sanitize(raw) -> Dictionary:
 	var rt := _dict(raw.get("totals"))
 	for k in TOTAL_KEYS:
 		d["totals"][k] = _int_or(rt.get(k), 0, B.SAVE_INT_MAX, 0)
+
+	# 追補 1・E-A6: casino の無い古い保存データには既定値が入る
+	var rc := _dict(raw.get("casino"))
+	for k in CASINO_KEYS:
+		d["casino"][k[0]] = _int_or(rc.get(k[0]), 0, k[1], k[2])
 
 	for id in _dict(raw.get("achievements")):
 		var date = raw["achievements"][id]

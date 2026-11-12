@@ -1,5 +1,5 @@
 # 記録画面(FR-19・画面設計書 §3.4)。通算の値 10 個と、得点の上位 10 ランを出す。
-# 上位ランが 0 件のときは「まだ記録がありません」。
+# 上位ランが 0 件のときは「まだ記録がありません」。その下に、持ち点とブラックジャックの数(追補 1 §7.6)。
 extends "res://ui/screens/page.gd"
 
 const ShareText := preload("res://core/share_text.gd")
@@ -34,9 +34,18 @@ func _fill() -> void:
 	var tops: Array = d["top_runs"]
 	if tops.is_empty():
 		body.add_child(Kit.label(S.REC_EMPTY, T.FS_BODY, T.W_BODY, T.TEXT_DIM))
-		return
 	for i in tops.size():
 		body.add_child(_row(i + 1, tops[i]))
+	# 追補 1 §7.6: 持ち点と、ゲームごとの数
+	var c: Dictionary = d["casino"]
+	for part in [
+		[S.WALLET, [[S.WALLET, c["wallet"]], [S.REC_WALLET_PEAK, c["wallet_peak"]], [S.REC_REFILLS, c["refills"]]]],
+		[S.BTN_BJ, [[S.REC_HANDS, c["bj_hands"]], [S.REC_WINS, c["bj_wins"]], [S.REC_NATURALS, c["bj_naturals"]]]],
+	]:
+		section(part[0])
+		var cg := grid(cols)
+		for item in part[1]:
+			cg.add_child(Kit.stat(item[0], ShareText.group(item[1]), cell_w))
 
 
 func _row(rank: int, e: Dictionary) -> Control:

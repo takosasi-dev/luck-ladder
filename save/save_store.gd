@@ -158,6 +158,39 @@ func finish_run(stats, date: String, day_no: int) -> Dictionary:
 	return {"new_achievements": fresh, "title_before": title_before, "title_after": Progress.title_rank(t["total_score"]), "new_unlocks": new_unlocks, "attempt": attempt}
 
 
+# ---- 追補 1: 持ち点(ブラックジャックとポーカーで共通) ----
+
+# FR-A2: 賭けられないほど減っていたら、最初の値に補充する。補充したら真。
+func casino_refill() -> bool:
+	var c: Dictionary = data["casino"]
+	if c["wallet"] >= B.BET_CHOICES[0]:
+		return false
+	c["wallet"] = B.WALLET_START
+	c["refills"] += 1
+	write()
+	return true
+
+
+# FR-A4: 賭けた点を引いて保存する。足りなければ何もせず偽。
+func casino_pay(points: int) -> bool:
+	var c: Dictionary = data["casino"]
+	if points <= 0 or c["wallet"] < points:
+		return false
+	c["wallet"] -= points
+	write()
+	return true
+
+
+# 勝負が付いたとき: 戻りを足し(E-A10)、counts(項目 → 足す数)を数えて保存する。
+func casino_settle(returned: int, counts: Dictionary) -> void:
+	var c: Dictionary = data["casino"]
+	c["wallet"] = mini(c["wallet"] + returned, B.WALLET_MAX)
+	c["wallet_peak"] = maxi(c["wallet_peak"], c["wallet"])
+	for k in counts:
+		c[k] += counts[k]
+	write()
+
+
 func export_text() -> String:
 	return Codec.to_export(data)
 

@@ -28,6 +28,10 @@ const RecordsScreen := preload("res://ui/screens/records.gd")
 const CollectionScreen := preload("res://ui/screens/collection.gd")
 const SaveDataScreen := preload("res://ui/screens/save_data.gd")
 const ToastPart := preload("res://ui/parts/toast.gd")
+const BJ := preload("res://core/bj_rules.gd")
+const CasinoTable := preload("res://ui/screens/casino_table.gd")
+const BlackjackScreen := preload("res://ui/screens/blackjack.gd")
+const Main := preload("res://ui/main.gd")
 
 const FONT_PATH := "res://assets/fonts/NotoSansJP-Variable.ttf"
 const STRINGS_PATH := "res://core/strings.gd"
@@ -38,6 +42,14 @@ const TEST_SAVE := "user://ll_test_save.json"
 class FailStore extends SaveStore:
 	func _write_to(_file_path: String, _text: String) -> bool:
 		return false
+
+
+# 追補 1: 決めた並びの山札で配る卓。
+class FixedBlackjack extends BlackjackScreen:
+	var fixed: PackedInt32Array
+
+	func _new_deck() -> PackedInt32Array:
+		return fixed
 
 
 # 画面のテスト用の、main の代わり(保存・効果音・BGM と、設定を写した回数だけを持つ)。
@@ -952,6 +964,16 @@ func test_play_screen_moves() -> String:
 		title.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 	if err == "" and not title.versus.disabled:
 		err = "versus must stay disabled until Phase 7"
+	# 追補 1 §7.1: ブラックジャックは main が知っている画面へ行く。ポーカーは追補の Phase 2 まで押せない
+	var pages := []
+	title.page_pressed.connect(func(p: String): pages.append(p))
+	for b in title.menu.find_children("*", "Button", true, false):
+		if b.text == S.BTN_BJ:
+			b.pressed.emit()
+		elif b.text.begins_with(S.BTN_POKER) and err == "" and not b.disabled:
+			err = "poker must stay disabled until it exists"
+	if err == "" and (pages != ["blackjack"] or not Main.PAGES.has("blackjack")):
+		err = "title must open blackjack: " + str(pages)
 	settings._store("fx", "lite")
 	if err == "" and (app.save.data["settings"]["fx"] != "lite" or app.applied != 1):
 		err = "settings must save and apply at once"
@@ -1055,8 +1077,9 @@ func test_pages_build() -> String:
 				page.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 			if script == AchievementsScreen and err == "" and page.side.text != S.ACH_COUNT % [app.save.data["achievements"].size(), 35]:
 				err = "achievement count: " + page.side.text
-			if script == RecordsScreen and err == "" and not played and page.body.get_child_count() != 3:
-				err = "empty records must show the empty line"
+			# 通算の表・見出し・「まだ記録がありません」の 3 つと、追補 1 の見出しと表が 2 組
+			if script == RecordsScreen and err == "" and not played and page.body.get_child_count() != 7:
+				err = "empty records must show the empty line and the wallet sections"
 			if script == SaveDataScreen and err == "":
 				page.import_box.text = "abc"
 				page._check_import()
@@ -1093,6 +1116,278 @@ func test_all_scripts_load() -> String:
 			var script = load(file)
 			if script == null or not script.can_instantiate():
 				return "cannot load " + file
+	return ""
+
+
+# ---- 追補 1(ブラックジャックとポーカー) ----
+
+# 数字(1 = A … 13 = K)とマークから札の番号を作る。
+func _c(rank: int, suit: int = 0) -> int:
+	return suit * 13 + rank - 1
+
+
+# 配る順(プレイヤー、ディーラー、プレイヤー、ディーラー、その後に引く札)に数字を並べた山札で、勝負を 1 つ作る。
+func _bj(ranks: Array, bet: int = 100):
+	var cards := PackedInt32Array()
+	for i in ranks.size():
+		cards.append(_c(ranks[i], i % 4))
+	return BJ.new(cards, bet)
+
+
+# AC-A1: 合計の計算と、11 と数えている A が残っているか。
+func test_bj_totals() -> String:
+	for c in [[[1, 13], 21, true], [[1, 1, 9], 21, true], [[1, 6, 13], 17, false], [[13, 12, 2], 22, false], [[1, 6], 17, true], [[11, 12], 20, false], [[1, 1], 12, true]]:
+		var v := BJ.value(c[0].map(func(r): return _c(r)))
+		if v["total"] != c[1] or v["soft"] != c[2]:
+			return "%s -> %s" % [str(c[0]), str(v)]
+	return ""
+
+
+# AC-A2: 最初の 2 枚で 21。
+func test_bj_naturals() -> String:
+	for c in [[[1, 9, 13, 7], 100, "natural", 250], [[1, 9, 13, 7], 10, "natural", 25], [[1, 1, 13, 13], 100, "push", 100], [[9, 1, 7, 13], 100, "lose", 0]]:
+		var h = _bj(c[0], c[1])
+		if not h.done or h.result != c[2] or h.returned != c[3]:
+			return "%s -> %s %d" % [str(c[0]), h.result, h.returned]
+	return ""
+
+
+# AC-A3・AC-A4: ディーラーの引き方と、勝ち・負け・引き分け・バーストの戻り。
+func test_bj_stand_and_hit() -> String:
+	# [山札, ヒットの回数, 結果, 戻り, ディーラーの枚数]
+	for c in [
+		[[10, 10, 9, 6, 5], 0, "lose", 0, 3],
+		[[10, 1, 9, 6, 5], 0, "win", 200, 2],
+		[[10, 10, 9, 7, 5], 0, "win", 200, 2],
+		[[10, 10, 7, 9], 0, "lose", 0, 2],
+		[[10, 10, 8, 8], 0, "push", 100, 2],
+		[[10, 10, 7, 6, 13], 0, "win", 200, 3],
+		[[10, 10, 6, 6, 13], 1, "bust", 0, 2],
+		[[5, 10, 6, 7, 13], 1, "win", 200, 2],
+		[[2, 10, 3, 6, 4, 5, 2], 2, "", 0, 2],
+	]:
+		var h = _bj(c[0])
+		if h.done:
+			return "%s must not end on the deal" % str(c[0])
+		for i in c[1]:
+			h.hit()
+		if c[2] == "":
+			if h.done:
+				return "%s must still be open after %d hits" % [str(c[0]), c[1]]
+			continue
+		# ヒットで 21 か 22 以上になったら、スタンドを待たずに勝負が付く(FR-A12)
+		if c[1] > 0 and not h.done:
+			return "%s must end by itself" % str(c[0])
+		h.stand()
+		if h.result != c[2] or h.returned != c[3] or h.dealer.size() != c[4]:
+			return "%s -> %s %d dealer %d" % [str(c[0]), h.result, h.returned, h.dealer.size()]
+		h.hit()
+		h.stand()
+		h.double_down()
+		if h.returned != c[3] or h.player.size() != 2 + c[1]:
+			return "%s changed after the end" % str(c[0])
+	return ""
+
+
+# AC-A5: ダブル。
+func test_bj_double() -> String:
+	var h = _bj([5, 10, 6, 7, 13])
+	if not h.can_double(100) or h.can_double(99):
+		return "can_double must compare the wallet with the bet"
+	h.double_down()
+	if not h.done or h.bet != 200 or h.player.size() != 3 or h.result != "win" or h.returned != 400:
+		return "double win: %s bet %d returned %d" % [h.result, h.bet, h.returned]
+	h = _bj([10, 10, 6, 6, 13])
+	h.double_down()
+	if h.result != "bust" or h.returned != 0 or h.bet != 200 or h.dealer.size() != 2:
+		return "double bust: " + h.result
+	h = _bj([2, 10, 3, 6, 4, 5, 2])
+	h.hit()
+	if h.done or h.can_double(1000):
+		return "no double after the third card"
+	h.double_down()
+	if h.bet != 100 or h.player.size() != 3:
+		return "double_down after a hit must do nothing"
+	return ""
+
+
+# AC-A8・AC-A9・E-A10: 持ち点の出し入れと補充。どれも保存される。
+func test_casino_wallet() -> String:
+	var store = _fresh_store()
+	if store.data["casino"]["wallet"] != B.WALLET_START or store.casino_refill():
+		return "a new save starts at WALLET_START without a refill"
+	if store.casino_pay(0) or store.casino_pay(B.WALLET_START + 1) or store.data["casino"]["wallet"] != B.WALLET_START:
+		return "pay must refuse 0 and more than the wallet"
+	if not store.casino_pay(100) or SaveStore.new(TEST_SAVE).data["casino"]["wallet"] != 900:
+		return "pay must take the bet and save"
+	store.casino_settle(250, {"bj_hands": 1, "bj_wins": 1, "bj_naturals": 1})
+	var c: Dictionary = SaveStore.new(TEST_SAVE).data["casino"]
+	if c["wallet"] != 1150 or c["wallet_peak"] != 1150 or c["bj_hands"] != 1 or c["bj_wins"] != 1 or c["bj_naturals"] != 1:
+		return "settle: " + str(c)
+	store.casino_settle(0, {"bj_hands": 1})
+	if store.data["casino"]["wallet"] != 1150 or store.data["casino"]["bj_hands"] != 2 or store.data["casino"]["bj_wins"] != 1:
+		return "a loss must only count the hand"
+	store.data["casino"]["wallet"] = B.WALLET_MAX - 10
+	store.casino_settle(100, {})
+	if store.data["casino"]["wallet"] != B.WALLET_MAX or store.data["casino"]["wallet_peak"] != B.WALLET_MAX:
+		return "the wallet must stop at WALLET_MAX"
+	store.data["casino"]["wallet"] = B.BET_CHOICES[0]
+	if store.casino_refill() or store.data["casino"]["refills"] != 0:
+		return "no refill while the smallest bet is affordable"
+	store.data["casino"]["wallet"] = B.BET_CHOICES[0] - 1
+	if not store.casino_refill():
+		return "refill below the smallest bet"
+	c = SaveStore.new(TEST_SAVE).data["casino"]
+	if c["wallet"] != B.WALLET_START or c["refills"] != 1:
+		return "refill: " + str(c)
+	return ""
+
+
+# AC-A10: 保存データの casino。古いデータには既定値が入り、壊れた値はその項目だけ戻り、書き出しと消去にも乗る。
+func test_casino_save() -> String:
+	var want: Dictionary = Codec.defaults()["casino"]
+	if want["wallet"] != B.WALLET_START or want["wallet_peak"] != B.WALLET_START or want["pk_best"] != 0 or want.size() != 9:
+		return "defaults: " + str(want)
+	var old: Dictionary = Codec.defaults("Alice")
+	old.erase("casino")
+	old["totals"]["runs"] = 3
+	var res := Codec.sanitize(old)
+	if res["broken"] or res["data"]["casino"] != want or res["data"]["totals"]["runs"] != 3 or res["data"]["settings"]["name"] != "Alice":
+		return "a save without casino must get the defaults and keep the rest"
+	old["casino"] = {"wallet": -5, "wallet_peak": "x", "refills": 2.5, "bj_hands": 7.0, "bj_wins": B.WALLET_MAX, "pk_best": 10, "junk": 1}
+	var got: Dictionary = Codec.sanitize(old)["data"]["casino"]
+	if got["wallet"] != B.WALLET_START or got["wallet_peak"] != B.WALLET_START or got["refills"] != 0 or got["pk_best"] != 0:
+		return "bad values must fall back: " + str(got)
+	if got["bj_hands"] != 7 or not got["bj_hands"] is int or got["bj_wins"] != B.WALLET_MAX or got.has("junk"):
+		return "good values must stay: " + str(got)
+	old["casino"]["wallet"] = B.WALLET_MAX + 1
+	for junk in ["x", 5, [], null]:
+		var raw: Dictionary = old.duplicate(true)
+		raw["casino"] = junk
+		if Codec.sanitize(raw)["data"]["casino"] != want:
+			return "casino of a wrong type must reset"
+	if Codec.sanitize(old)["data"]["casino"]["wallet"] != B.WALLET_START:
+		return "a wallet above WALLET_MAX must reset"
+	var store = _fresh_store()
+	store.casino_pay(100)
+	store.casino_settle(250, {"bj_hands": 1, "bj_wins": 1})
+	var back := Codec.from_export(store.export_text())
+	if not back["ok"] or back["data"]["casino"] != store.data["casino"] or back["data"]["casino"]["wallet"] != 1150:
+		return "export and import must carry casino"
+	store.erase_all()
+	if store.data["casino"] != want:
+		return "erase must reset casino"
+	return ""
+
+
+# AC-A11: ブラックジャックの卓を両方の配置に組み、勝負を最後まで進める。動きの間と同じフレームの入力は捨てる。
+func test_blackjack_screen() -> String:
+	Tokens.apply_settings({})
+	CasinoTable.last_bets.clear()
+	var app := StubApp.new(_fresh_store(), root)
+	# 鳴らしたまま終了すると、再生中の音が「残った物」として終了時に報告されることがあるので、鳴らさない
+	app.sfx.set_volume(0)
+	var t = FixedBlackjack.new()
+	t.setup(app)
+	var backs := []
+	t.back_pressed.connect(func(): backs.append(1))
+	root.add_child(t)
+	t.relayout(true, Rect2(0, 0, 1280, 720))
+	var w: Dictionary = app.save.data["casino"]
+	var err := ""
+	if t.phase != "bet" or t.bet != B.BET_DEFAULT or t.bet_buttons.size() != 4 or t.back.disabled or not t.deal.visible or t.actions["hit"].visible:
+		err = "must open in the betting phase with the default bet"
+	# プレイヤー 10・7、ディーラー 10・6、ディーラーが K を引いてバースト
+	t.fixed = PackedInt32Array([_c(10), _c(10, 1), _c(7), _c(6, 1), _c(13)])
+	t._deal()
+	if err == "" and (t.phase != "play" or not t.busy or SaveStore.new(TEST_SAVE).data["casino"]["wallet"] != 900 or t.wallet_num.text != "900"):
+		err = "deal must take the bet and save it at once"
+	t._back()
+	if err == "" and not backs.is_empty():
+		err = "back must not work during a hand"
+	t._finish_tween()
+	if err == "" and (t.busy or t.totals["player"].text != "17" or t.totals["dealer"].text != "10" or not t.back.disabled or t.deal.visible or not t.actions["hit"].visible):
+		err = "after the deal: player %s dealer %s" % [t.totals["player"].text, t.totals["dealer"].text]
+	# 「配る」と同じフレームなので、印を戻さない 1 回目は捨てる(E-A4)
+	t._act("stand")
+	if err == "" and t.hand.done:
+		err = "second input in the same frame must be dropped"
+	t.last_input_frame = -1
+	t._act("stand")
+	if err == "" and (w["wallet"] != 1100 or w["bj_hands"] != 1 or t.wallet_num.text != "900"):
+		err = "the result must be saved at once and shown after the motion"
+	t.relayout(false, Rect2(0, 0, 720, 1280))
+	if err == "" and (t.phase != "bet" or t.busy or t.message.text != S.BJ_RESULTS["win"] or t.totals["dealer"].text != "26" or t.wallet_num.text != "1,100" or w["bj_wins"] != 1 or t.back.disabled):
+		err = "win by dealer bust: %s dealer %s wallet %s" % [t.message.text, t.totals["dealer"].text, t.wallet_num.text]
+	# ダブル: 5・6 に K を引いて 21、ディーラーは 10・7
+	t._pick_bet(500)
+	t.fixed = PackedInt32Array([_c(5), _c(10, 1), _c(6), _c(7, 1), _c(13)])
+	t.last_input_frame = -1
+	t._deal()
+	# 配る動きの間の入力は捨てる(E-A4)
+	t.last_input_frame = -1
+	t._act("double")
+	if err == "" and (t.hand.bet != 500 or t.rows["player"].size() != 2):
+		err = "input during the deal must be dropped"
+	t._finish_tween()
+	t.last_input_frame = -1
+	t._act("double")
+	t._finish_tween()
+	if err == "" and (w["wallet"] != 2100 or w["wallet_peak"] != 2100 or w["bj_wins"] != 2 or t.rows["player"].size() != 3 or t.stake != 1000 or t.bet != 500 or CasinoTable.last_bets["bj"] != 500):
+		err = "double: wallet %d stake %d" % [w["wallet"], t.stake]
+	# ダブルに足りない(E-A3)。バーストでは、ディーラーの裏の札を開けない
+	w["wallet"] = 150
+	t._pick_bet(100)
+	t.fixed = PackedInt32Array([_c(10), _c(10, 1), _c(6), _c(6, 1), _c(13)])
+	t.last_input_frame = -1
+	t._deal()
+	t._finish_tween()
+	t.last_input_frame = -1
+	t._act("double")
+	if err == "" and (t.hand.bet != 100 or t.busy or not t.actions["double"].disabled or t.actions["hit"].disabled):
+		err = "double must be refused when the wallet is short"
+	t._act("hit")
+	t._finish_tween()
+	if err == "" and (t.message.text != S.BJ_RESULTS["bust"] or w["wallet"] != 50 or t.totals["dealer"].text != "10" or t.rows["dealer"][1].face_up):
+		err = "bust: %s wallet %d" % [t.message.text, w["wallet"]]
+	# E-A2: 払えない点を選んでいたら下げる。払えない選択肢は押せない
+	if err == "" and (t.bet != 50 or not t.bet_buttons[2].disabled or t.bet_buttons[1].disabled):
+		err = "the bet must drop to what the wallet can pay, got %d" % t.bet
+	t._pick_bet(500)
+	if err == "" and t.bet != 50:
+		err = "a bet above the wallet must not be picked"
+	# FR-A2: 賭けられないほど減ったら補充して、1 行知らせる
+	w["wallet"] = 5
+	t._enter_bet()
+	if err == "" and (w["wallet"] != B.WALLET_START or w["refills"] != 1 or t.notice.text == "" or t.wallet_num.text != "1,000"):
+		err = "refill on entering the betting phase"
+	t._back()
+	if err == "" and backs.size() != 1:
+		err = "back must work in the betting phase"
+	# 最初の 2 枚で 21: すぐ勝負が付き、戻りは 2.5 倍
+	t.fixed = PackedInt32Array([_c(1), _c(9, 1), _c(13), _c(7, 1)])
+	t.last_input_frame = -1
+	t._deal()
+	t._finish_tween()
+	if err == "" and (t.phase != "bet" or t.message.text != S.BJ_RESULTS["natural"] or w["wallet"] != 1075 or w["bj_naturals"] != 1 or t.totals["dealer"].text != "16"):
+		err = "natural: %s wallet %d" % [t.message.text, w["wallet"]]
+	t.free()
+	app.free_nodes()
+	return err
+
+
+# AC-A13・D-A9: 画面に出す文言に、チップ・コイン・お金・円・$ の字が無い。
+func test_no_money_words() -> String:
+	var texts := []
+	_texts(load(STRINGS_PATH).get_script_constant_map().values(), texts)
+	# このファイルには日本語の文字列を書けないので、文字の番号から言葉を作る
+	for codes in [[0x30C1, 0x30C3, 0x30D7], [0x30B3, 0x30A4, 0x30F3], [0x304A, 0x91D1], [0x5186], [0x24]]:
+		var word := ""
+		for code in codes:
+			word += String.chr(code)
+		for t in texts:
+			if t.contains(word):
+				return "strings.gd has a money word: " + t
 	return ""
 
 

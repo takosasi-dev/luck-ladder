@@ -1,5 +1,5 @@
 # タイトル画面(FR-2・画面設計書 §3.1)。題名、梯子の段の灯り、「つづきから」「ラン」「今日の山札」
-# 「対戦」(Phase 7 まで準備中で押せない)「実績」「コレクション」「記録」「設定」、称号、版を出す。
+# 「対戦」(Phase 7 まで準備中で押せない)「ブラックジャック」「ポーカー」(追補 1)「実績」「コレクション」「記録」「設定」、称号、版を出す。
 # 途中のランがあるのに「ラン」を押したら捨てるかを確かめ(E-11)、今日の山札の 2 回目からは 1 行断ってから始める(FR-14)。
 extends Control
 
@@ -75,6 +75,9 @@ func _ready() -> void:
 	# 対戦は Phase 7 で作るまで、押せないボタンとして出しておく(仕様書 §11 の Phase 5)
 	versus = _button(S.BTN_VERSUS + "  " + S.COMING_SOON, "ghost", func(): pass, short, row)
 	versus.disabled = true
+	# 追補 1 §7.1。ポーカーは、追補の Phase 2 で作るまで押せないボタンとして出しておく
+	_pair([[S.BTN_BJ, "blackjack"], [S.BTN_POKER + "  " + S.COMING_SOON, "poker"]], "green")
+	(short.back() as Button).disabled = true
 	var ach := S.BTN_ACH + "  " + S.ACH_COUNT % [info.get("ach_done", 0), info.get("ach_total", 0)]
 	_pair([[ach, "achievements"], [S.BTN_COLLECTION, "collection"]])
 	_pair([[S.BTN_RECORDS, "records"], [S.BTN_SETTINGS, "settings"]])
@@ -96,13 +99,13 @@ func _button(text: String, kind: String, cb: Callable, group: Array, parent: Con
 	return b
 
 
-func _pair(items: Array) -> void:
+func _pair(items: Array, kind: String = "ghost") -> void:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
 	menu.add_child(h)
 	for item in items:
 		var page: String = item[1]
-		_button(item[0], "ghost", func(): page_pressed.emit(page), short, h)
+		_button(item[0], kind, func(): page_pressed.emit(page), short, h)
 
 
 func _process(_delta: float) -> void:
@@ -184,11 +187,11 @@ func relayout(is_landscape: bool, view_rect: Rect2) -> void:
 	landscape = is_landscape
 	view = view_rect
 	size = Vector2(1280, 720) if landscape else Vector2(720, 1280)
-	# 横長は高さ 68 と 60、縦長は当たりを 96 にする(画面設計書 §3.1)
+	# 横長は高さ 64 と 54(段が 1 つ増えたので詰めた。追補 1 の前提 A5)、縦長は当たりを 96 にする(画面設計書 §3.1)
 	for b in tall:
-		b.custom_minimum_size.y = 68 if landscape else 96
+		b.custom_minimum_size.y = 64 if landscape else 96
 	for b in short:
-		b.custom_minimum_size.y = 60 if landscape else 96
+		b.custom_minimum_size.y = 54 if landscape else 96
 	var menu_w := 560.0 if landscape else 660.0
 	var top := 16.0 if landscape else 130.0
 	logo.add_theme_font_size_override("font_size", T.FS_TITLE if landscape else T.FS_TITLE - 8)

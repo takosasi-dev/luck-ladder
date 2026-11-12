@@ -31,3 +31,13 @@ const DAY_NO_ORIGIN := 20454
 const ACTIONS_MAX := 102
 # 保存の数の上限(JSON の数が小数で読まれても桁が落ちない範囲)
 const SAVE_INT_MAX := 1000000000000000
+
+# 追補 1(ブラックジャックとポーカー): 持ち点と賭ける点
+const WALLET_START := 1000
+const WALLET_MAX := 9999999
+const BET_CHOICES := [10, 50, 100, 500]
+const BET_DEFAULT := 100
+const BJ_DEALER_STAND := 17
+# 最初の 2 枚で 21 の戻り = 賭けた点 × 5 ÷ 2(賭ける点はどれも偶数なので割り切れる)
+const BJ_NATURAL_NUM := 5
+const BJ_NATURAL_DEN := 2

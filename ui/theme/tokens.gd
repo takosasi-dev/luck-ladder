@@ -105,6 +105,9 @@ const TOAST_IN := 0.25
 const TOAST_STAY := 2.5
 const TOAST_OUT := 0.20
 const RESULT_COUNT := 0.8
+# 追補 1 の卓: 札 1 枚ごとの間と、ディーラーが 1 枚めくる前の間(§7.2 の「配り 1.2 秒以内、1 枚につき 0.5 秒以内」)
+const TABLE_GAP := 0.12
+const DEALER_GAP := 0.25
 const SPARKS_HIT := 24
 const SPARKS_BANK := 40
 const CONFETTI_COUNT := 120

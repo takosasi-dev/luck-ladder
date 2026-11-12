@@ -122,6 +122,26 @@ const COL_COND := "条件: %s"
 const COND_TITLE := "称号「%s」"
 const COND_COUNT := "実績を %d 個"
 
+# 追補 1: ブラックジャックとポーカー。「チップ」や通貨の字は使わない(D-A9)
+const BTN_BJ := "ブラックジャック"
+const BTN_POKER := "ポーカー"
+const WALLET := "持ち点"
+const WALLET_REFILLED := "持ち点を %s 点に補充しました"
+const BET_LABEL := "賭ける点 %s"
+const BTN_DEAL := "配る"
+const BTN_HIT := "ヒット"
+const BTN_STAND := "スタンド"
+const BTN_DOUBLE := "ダブル"
+const DEALER := "ディーラー"
+const PLAYER := "あなた"
+const BJ_RESULTS := {"natural": "ブラックジャック", "win": "勝ち", "push": "引き分け", "lose": "負け", "bust": "バースト"}
+const DELTA_PLUS := "+%s"
+const REC_WALLET_PEAK := "持ち点の最高"
+const REC_REFILLS := "補充した回数"
+const REC_HANDS := "勝負の数"
+const REC_WINS := "勝った数"
+const REC_NATURALS := "ブラックジャックの数"
+
 # 結果(FR-13)
 const RESULT_GAMEOVER := "ラン終了"
 const RESULT_CLEAR := "完走"
