@@ -1050,6 +1050,9 @@ func test_daily_through_play_screen() -> String:
 			res.setup(app, got[0], 0)
 			root.add_child(res)
 			res.relayout(false, Rect2(0, 0, 720, 1280))
+			# 「結果をコピー」は、スクロールする中身ではなく下の固定の段にある(中身が長い回に隠れないように)
+			if res.buttons.size() != 3 or res.buttons[2].text != S.BTN_COPY_RESULT or res.buttons[2].get_parent() != res.btn_box:
+				err = "the copy button must sit in the fixed row"
 			res.free()
 		play.free()
 	var d: Dictionary = app.save.data

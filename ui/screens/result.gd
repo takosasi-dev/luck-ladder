@@ -80,24 +80,26 @@ func _ready() -> void:
 	var share := ShareText.build(s.mode, no, date, attempt, st.score, st.ended == "clear", s.draws, s.best_streak, B.SHARE_URL)
 	var share_box := Kit.text_box(share, false)
 	share_box.custom_minimum_size = Vector2(560, 138)
-	box.add_child(share_box)
-	var copy := Kit.button(S.BTN_COPY_RESULT, T.FS_SMALL + 2, "ghost")
-	copy.custom_minimum_size = Vector2(320, 96)
-	copy.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	copy_note = Kit.label("", T.FS_SMALL, T.W_BODY, T.TEXT_DIM)
 	copy_note.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-	copy_note.custom_minimum_size = Vector2(560, 0)
-	copy.pressed.connect(func():
-		DisplayServer.clipboard_set(share)
-		copy_note.text = S.COPY_TRIED)
-	box.add_child(copy)
+	# 2 行ぶんの高さを先に取っておく(押した後に中身の高さが変わると、文字欄まで送る位置がずれる)
+	copy_note.custom_minimum_size = Vector2(560, 72)
 	box.add_child(copy_note)
+	box.add_child(share_box)
 	btn_box = HBoxContainer.new()
 	btn_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	btn_box.add_theme_constant_override("separation", 14)
 	add_child(btn_box)
 	_add_button(S.BTN_RETRY, "brass", retry_pressed)
 	_add_button(S.BTN_TO_TITLE, "green", title_pressed)
+	# 「結果をコピー」も下に固定する(実績の行が増えた回に、スクロールの下へ隠れていた)。押したら共有の文字欄まで送る
+	var copy := Kit.button(S.BTN_COPY_RESULT, T.FS_SMALL + 2, "ghost")
+	copy.pressed.connect(func():
+		DisplayServer.clipboard_set(share)
+		copy_note.text = S.COPY_TRIED
+		scroll.ensure_control_visible(share_box))
+	btn_box.add_child(copy)
+	buttons.append(copy)
 	# 得点は 0 から 0.8 秒で数え上げる。控えめでは数え上げない
 	if T.lite:
 		_set_score(st.score)
@@ -127,7 +129,7 @@ func _add_button(text: String, kind: String, sig: Signal) -> void:
 	buttons.append(b)
 
 
-# 「もう一度」と「タイトルへ」は下に固定し、中身だけをスクロールする(画面設計書 §3.2)。
+# 「もう一度」「タイトルへ」「結果をコピー」は下に固定し、中身だけをスクロールする(画面設計書 §3.2)。
 func relayout(landscape: bool, _view: Rect2) -> void:
 	size = Vector2(1280, 720) if landscape else Vector2(720, 1280)
 	var w := 700.0 if landscape else 660.0
@@ -139,7 +141,7 @@ func relayout(landscape: bool, _view: Rect2) -> void:
 	Kit.place(btn_box, Rect2(r.position.x + 20, r.end.y - 116, w - 40, 100))
 	grid.columns = 3 if landscape else 2
 	for b in buttons:
-		b.custom_minimum_size = Vector2((w - 54) / 2, 100)
+		b.custom_minimum_size = Vector2((w - 68) / 3, 100)
 
 
 func _unhandled_input(event: InputEvent) -> void:
