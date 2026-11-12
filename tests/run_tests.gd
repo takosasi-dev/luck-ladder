@@ -16,6 +16,13 @@ const Codec := preload("res://core/save_codec.gd")
 const SaveStore := preload("res://save/save_store.gd")
 const Fx := preload("res://tests/fixtures.gd")
 const PlayLayout := preload("res://ui/layout/play_layout.gd")
+const Tokens := preload("res://ui/theme/tokens.gd")
+const Sfx := preload("res://audio/sfx.gd")
+const Bgm := preload("res://audio/bgm.gd")
+const PlayScreen := preload("res://ui/screens/play.gd")
+const ResultScreen := preload("res://ui/screens/result.gd")
+const SettingsScreen := preload("res://ui/screens/settings.gd")
+const TitleScreen := preload("res://ui/screens/title.gd")
 
 const FONT_PATH := "res://assets/fonts/NotoSansJP-Variable.ttf"
 const STRINGS_PATH := "res://core/strings.gd"
@@ -28,7 +35,39 @@ class FailStore extends SaveStore:
 		return false
 
 
-func _initialize() -> void:
+# 画面のテスト用の、main の代わり(保存・効果音・BGM と、設定を写した回数だけを持つ)。
+class StubApp extends RefCounted:
+	var save
+	var sfx
+	var bgm
+	var overlay = null
+	var applied := 0
+
+	func _init(store, parent: Node) -> void:
+		save = store
+		sfx = Sfx.new()
+		bgm = Bgm.new()
+		parent.add_child(sfx)
+		parent.add_child(bgm)
+
+	func apply_settings() -> void:
+		applied += 1
+
+	func open_settings() -> void:
+		pass
+
+	func free_nodes() -> void:
+		sfx.free()
+		bgm.free()
+
+
+# 最初のフレームで始める。_initialize の時点ではツリーが動いておらず、足したノードの _ready が呼ばれない。
+func _process(_delta: float) -> bool:
+	_run_all()
+	return true
+
+
+func _run_all() -> void:
 	var failed := 0
 	var total := 0
 	for m in get_method_list():
@@ -682,6 +721,91 @@ func test_play_layout() -> String:
 			for k in ["high", "low", "same", "bank"]:
 				if r[k].position.y < 768:
 					return "portrait: %s above y 768" % k
+		# 重ねて出す物(手ほどき・呼びかけ・一時停止の当たり)も画面の中に収まる
+		var o: Dictionary = PlayLayout.over(landscape)
+		for k in ["pause_hit", "callout", "tut1", "tut2", "tut3", "diag"]:
+			if not o.has(k) or not screen.encloses(o[k]):
+				return "%s: over %s missing or outside" % [tag, k]
+		if o["pause_hit"].size.x < 96 or o["pause_hit"].size.y < 96 or not o["pause_hit"].encloses(r["pause"]):
+			return "%s: pause hit area" % tag
+	return ""
+
+
+# ---- Phase 3 ----
+
+# INV-6: Playfair Display は ASCII の印字可能文字と × を持つ(直立とイタリックの両方)。
+func test_number_font_coverage() -> String:
+	for path in ["res://assets/fonts/PlayfairDisplay-Variable.ttf", "res://assets/fonts/PlayfairDisplay-Italic-Variable.ttf"]:
+		var font: Font = load(path)
+		if font == null:
+			return "cannot load " + path
+		var codes := range(0x20, 0x7F)
+		codes.append(0xD7)
+		for c in codes:
+			if not font.has_char(c):
+				return "%s lacks U+%04X" % [path, c]
+	return ""
+
+
+# AC-29: 音量の段 → dB。段 0 で無音、段 1 で -27、段 10 で 0。
+func test_volume_steps() -> String:
+	if Sfx.step_to_db(0) > -79.0:
+		return "step 0 must be silent"
+	if Sfx.step_to_db(1) != -27.0 or Sfx.step_to_db(10) != 0.0 or Sfx.step_to_db(5) != -15.0:
+		return "step table: %s %s %s" % [Sfx.step_to_db(1), Sfx.step_to_db(5), Sfx.step_to_db(10)]
+	return ""
+
+
+# §9.13: 効果音 12 種は 44.1 kHz・モノラル・16 ビットで 1.5 秒以下(clear だけ 3 秒以下)。BGM 3 曲は 1 曲 600 KB 以下。
+func test_audio_assets() -> String:
+	if Sfx.NAMES.size() != 12:
+		return "12 sfx names"
+	for n in Sfx.NAMES:
+		var bytes := FileAccess.get_file_as_bytes("res://assets/sfx/%s.wav" % n)
+		if bytes.size() < 44:
+			return "missing sfx " + n
+		var channels := bytes.decode_u16(22)
+		var rate := bytes.decode_u32(24)
+		var bits := bytes.decode_u16(34)
+		var sec := float(bytes.decode_u32(40)) / (rate * channels * bits / 8)
+		if channels != 1 or rate != 44100 or bits != 16 or sec > (3.0 if n == "clear" else 1.5):
+			return "%s: ch %d rate %d bits %d sec %s" % [n, channels, rate, bits, sec]
+	for n in Bgm.NAMES:
+		var size := FileAccess.get_file_as_bytes("res://assets/bgm/%s.ogg" % n).size()
+		if size == 0 or size > 600 * 1024:
+			return "%s: %d bytes" % [n, size]
+	return ""
+
+
+# AC-28・E-16・E-36: 知らない名前の音を鳴らしても落ちない。音量 0 では鳴らさない。
+func test_audio_missing_is_silent() -> String:
+	var sfx = Sfx.new()
+	root.add_child(sfx)
+	sfx.play("no_such_sound")
+	sfx.set_volume(0)
+	sfx.play("tap")
+	var bgm = Bgm.new()
+	root.add_child(bgm)
+	bgm.play("no_such_track")
+	bgm.unlock()
+	bgm.set_volume(0)
+	bgm.set_paused(true)
+	sfx.queue_free()
+	bgm.queue_free()
+	return ""
+
+
+# 設定の写し: 速さ「速い」は 0.6 倍、演出「控えめ」は lite。
+func test_tokens_settings() -> String:
+	Tokens.apply_settings({"speed": "fast", "fx": "lite"})
+	if not is_equal_approx(Tokens.t(1.0), 0.6) or not Tokens.lite:
+		return "fast + lite"
+	Tokens.apply_settings({"speed": "normal", "fx": "full"})
+	if Tokens.t(1.0) != 1.0 or Tokens.lite:
+		return "normal + full"
+	# INV-13: 当たり外れが分かるまで(滑り + めくり)が 0.5 秒以内
+	if Tokens.DEAL + Tokens.FLIP > 0.5:
+		return "reveal takes longer than 0.5 s"
 	return ""
 
 
@@ -702,6 +826,137 @@ func test_rebuild_with_stats() -> String:
 	var part := RunStats.rebuild("LL1:test:14", st.actions.substr(0, 10), "run", false, true)
 	if not part["ok"] or part["state"].actions != st.actions.substr(0, 10):
 		return "partial rebuild"
+	return ""
+
+
+# 画面を実際に組み立てて動かす。演出は Tween を手で最後まで進める(FR-11 の飛ばしと同じ道)。
+# [最後の 1 手の前までの操作, 最後の 1 手, 終わり方] を、横長と縦長、標準と控えめで通す。
+func test_play_screen_runs_to_the_end() -> String:
+	var clear_actions: String = _play("P1", "LL1:test:14")[0].actions
+	var cases := [
+		["LL1:test:14", clear_actions.left(-1), clear_actions.right(1), "clear"],
+		["LL1:test:2", "LLLLL", "H", "gameover"],
+	]
+	for lite in [false, true]:
+		Tokens.apply_settings({"speed": "normal", "fx": "lite" if lite else "full"})
+		for c in cases:
+			for landscape in [true, false]:
+				var app := StubApp.new(_fresh_store(), root)
+				var r := RunStats.rebuild(c[0], c[1], "run", false, true)
+				var play = PlayScreen.new()
+				play.setup(app, r["state"], r["stats"], "run", "2026-11-11", false)
+				var got := []
+				play.finished.connect(func(info: Dictionary): got.append(info))
+				root.add_child(play)
+				play.relayout(landscape, Rect2(Vector2.ZERO, PlayLayout.size(landscape)))
+				play._act(c[2], true)
+				if not play.busy:
+					return "%s: flip did not start" % c[3]
+				play._skip_flip()
+				if play.busy:
+					return "%s: flip did not finish" % c[3]
+				play._finish_post()
+				var err := ""
+				if got.size() != 1 or got[0]["state"].ended != c[3]:
+					err = "%s (lite %s, landscape %s): finished %d times" % [c[3], lite, landscape, got.size()]
+				elif not "A-01" in got[0]["new_achievements"]:
+					err = "%s: A-01 missing in %s" % [c[3], str(got[0]["new_achievements"])]
+				elif app.save.data["totals"]["runs"] != 1 or app.save.current("run") != null:
+					err = "%s: run not recorded" % c[3]
+				if err == "":
+					# 結果画面も、同じ結果で両方の配置に組めること
+					var res = ResultScreen.new()
+					res.setup(got[0], 0)
+					root.add_child(res)
+					for l2 in [true, false]:
+						res.relayout(l2, Rect2(Vector2.ZERO, PlayLayout.size(l2)))
+					res.free()
+				play.free()
+				app.free_nodes()
+				if err != "":
+					return err
+	Tokens.apply_settings({})
+	return ""
+
+
+# 確保・無効な手・演出中の連打(E-3・E-5)と、手ほどきの進み方(FR-12)。
+func test_play_screen_moves() -> String:
+	Tokens.apply_settings({})
+	var app := StubApp.new(_fresh_store(), root)
+	var st = RunState.new("x", _ordered_deck())
+	var play = PlayScreen.new()
+	play.setup(app, st, RunStats.new("run", false), "run", "2026-11-11", true)
+	root.add_child(play)
+	play.relayout(true, Rect2(0, 0, 1280, 720))
+	var err := ""
+	if play.tut_step != 1 or not play.tut.visible:
+		err = "tutorial 1 must show at the start"
+	play._act("B", true)
+	if err == "" and (st.actions != "" or play.busy):
+		err = "bank with empty pot must do nothing"
+	# 同じフレームの 2 つ目は捨てる(E-4)
+	play._act("H", true)
+	if err == "" and st.actions != "":
+		err = "second input in the same frame must be dropped"
+	# フレームを進められないので、印を戻して次の手として打つ
+	play.last_input_frame = -1
+	play._act("H", true)
+	play.last_input_frame = -1
+	play._act("H", true)
+	if err == "" and (st.actions != "H" or play.busy):
+		err = "second press during the flip must only skip it: actions %s busy %s" % [st.actions, play.busy]
+	if err == "" and play.tut_step != 2:
+		err = "tutorial 2 after the first move"
+	play.last_input_frame = -1
+	play._act("H", true)
+	play._skip_flip()
+	if err == "" and play.tut_step != 3:
+		err = "tutorial 3 once the pot is positive, got %d" % play.tut_step
+	play.last_input_frame = -1
+	play._act("B", true)
+	play._finish_post()
+	if err == "" and (st.actions != "HHB" or st.score == 0 or play.shown["score"] != float(st.score) or play.shown["pot"] != 0.0):
+		err = "bank: actions %s score %d shown %s" % [st.actions, st.score, str(play.shown)]
+	if err == "" and (play.tut_step != -1 or not app.save.data["tutorial_done"]):
+		err = "tutorial must be done after 3 tips"
+	if err == "" and app.save.current("run")["actions"] != "HHB":
+		err = "progress must be saved after each move"
+	# 一時停止・設定・タイトルも、両方の配置に組めること
+	play.last_input_frame = -1
+	play._toggle_pause()
+	if err == "" and play.pause_layer == null:
+		err = "pause did not open"
+	play.relayout(false, Rect2(0, -100, 720, 1480))
+	play._act("H", true)
+	if err == "" and st.actions != "HHB":
+		err = "moves must be ignored while paused"
+	play.free()
+	var settings = SettingsScreen.new()
+	settings.setup(app)
+	root.add_child(settings)
+	var title = TitleScreen.new()
+	title.setup(true, "")
+	root.add_child(title)
+	for l in [true, false]:
+		settings.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+		title.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+	settings._store("fx", "lite")
+	if err == "" and (app.save.data["settings"]["fx"] != "lite" or app.applied != 1):
+		err = "settings must save and apply at once"
+	settings.free()
+	title.free()
+	app.free_nodes()
+	Tokens.apply_settings({})
+	return err
+
+
+# 画面を含む全部のスクリプトが、構文エラーなしで読み込める(画面のコードはほかのテストが触らないため)。
+func test_all_scripts_load() -> String:
+	for dir in ["res://core", "res://ui", "res://save", "res://audio", "res://net"]:
+		for file in _gd_files(dir):
+			var script = load(file)
+			if script == null or not script.can_instantiate():
+				return "cannot load " + file
 	return ""
 
 
@@ -726,14 +981,13 @@ func test_source_rules() -> String:
 			var m := jp.search(_code_only(file))
 			if m:
 				return file + " has a Japanese literal " + m.get_string()
-	# shortcut: Phase 3 で 2 本目(table_bg)を足すまでは 2 本以下で見る。足したら == 2 にする
 	var shaders := DirAccess.get_files_at("res://shaders")
 	var n := 0
 	for f in shaders:
 		if f.ends_with(".gdshader"):
 			n += 1
-	if n > 2:
-		return "more than 2 shaders"
+	if n != 2:
+		return "shaders/ must hold exactly 2 shaders, found %d" % n
 	return ""
 
 

@@ -1,19 +1,17 @@
 # プレイ画面の部品の位置と大きさ(§9.1・画面設計書 §2.1・§2.2)。横長 1280×720 と縦長 720×1280 の 2 つ。
-# 部品は 2 つの配置で同じ物を使い、位置と大きさだけをここで決める。
+# 部品は 2 つの配置で同じ物を使い、位置と大きさだけをここで決める。OVER は部品の上に重ねて出す物(重なってよい)。
 extends RefCounted
 
 const LANDSCAPE := {
 	"pause": Rect2(14, 4, 120, 56),
-	"score": Rect2(144, 4, 400, 56),
-	"mode": Rect2(554, 4, 360, 56),
-	"lives": Rect2(924, 4, 342, 56),
+	"score": Rect2(150, 4, 380, 56),
+	"mode": Rect2(540, 4, 330, 56),
+	"lives": Rect2(1060, 4, 206, 56),
 	"ladder": Rect2(14, 72, 150, 560),
-	"tutorial": Rect2(176, 72, 752, 48),
-	"deck": Rect2(367, 158, 171, 240),
-	"deck_label": Rect2(367, 404, 171, 36),
-	"card": Rect2(602, 128, 214, 300),
-	"status": Rect2(176, 444, 752, 50),
-	"pot": Rect2(176, 500, 752, 120),
+	"deck": Rect2(250, 140, 171, 240),
+	"deck_label": Rect2(250, 388, 171, 34),
+	"card": Rect2(485, 104, 214, 300),
+	"pot": Rect2(352, 432, 400, 130),
 	"high": Rect2(936, 72, 330, 180),
 	"same": Rect2(936, 262, 160, 180),
 	"bank": Rect2(1106, 262, 160, 180),
@@ -21,17 +19,24 @@ const LANDSCAPE := {
 	"counter": Rect2(14, 640, 1252, 66),
 }
 
+const LANDSCAPE_OVER := {
+	"pause_hit": Rect2(14, 0, 120, 96),
+	"callout": Rect2(176, 66, 752, 70),
+	"tut1": Rect2(596, 412, 330, 46),
+	"tut2": Rect2(322, 566, 460, 46),
+	"tut3": Rect2(966, 204, 300, 46),
+	"diag": Rect2(800, 10, 250, 44),
+}
+
 const PORTRAIT := {
 	"pause": Rect2(14, 14, 120, 68),
-	"score": Rect2(144, 14, 340, 68),
-	"lives": Rect2(494, 14, 212, 68),
+	"score": Rect2(144, 14, 330, 68),
+	"lives": Rect2(484, 14, 222, 68),
 	"ladder": Rect2(14, 104, 692, 80),
-	"tutorial": Rect2(14, 194, 692, 48),
-	"deck": Rect2(106, 268, 208, 291),
-	"deck_label": Rect2(106, 566, 208, 40),
-	"card": Rect2(354, 248, 260, 364),
-	"pot": Rect2(14, 618, 352, 66),
-	"status": Rect2(376, 618, 330, 66),
+	"deck": Rect2(108, 236, 208, 291),
+	"deck_label": Rect2(108, 532, 208, 34),
+	"card": Rect2(352, 200, 260, 364),
+	"pot": Rect2(160, 568, 400, 118),
 	"counter": Rect2(14, 690, 692, 78),
 	"high": Rect2(14, 778, 692, 150),
 	"same": Rect2(14, 938, 341, 150),
@@ -39,9 +44,22 @@ const PORTRAIT := {
 	"low": Rect2(14, 1098, 692, 150),
 }
 
+const PORTRAIT_OVER := {
+	"pause_hit": Rect2(14, 0, 120, 96),
+	"callout": Rect2(14, 186, 692, 70),
+	"tut1": Rect2(130, 712, 460, 48),
+	"tut2": Rect2(130, 694, 460, 48),
+	"tut3": Rect2(380, 884, 320, 44),
+	"diag": Rect2(14, 1250, 692, 28),
+}
+
 
 static func rects(landscape: bool) -> Dictionary:
 	return LANDSCAPE if landscape else PORTRAIT
+
+
+static func over(landscape: bool) -> Dictionary:
+	return LANDSCAPE_OVER if landscape else PORTRAIT_OVER
 
 
 static func size(landscape: bool) -> Vector2:

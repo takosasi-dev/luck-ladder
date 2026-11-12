@@ -37,6 +37,11 @@ func _init(mode_value: String = "run", first_daily_value: bool = false) -> void:
 	first_daily = first_daily_value
 
 
+# 大穴: 当たりになる残り札が、残りの 4 分の 1 以下の側(§9.6)。演出の出し分けにも使う。
+static func is_longshot(n: int, w: int) -> bool:
+	return w * 4 <= n
+
+
 # 残り札の表示が「入」のまま手を打ったら呼ぶ。
 func note_counter(shown: bool) -> void:
 	if shown:
@@ -56,7 +61,7 @@ func on_guess(res: Dictionary, st) -> void:
 		if res["side"] == "S":
 			same_hits += 1
 		max_gain = maxi(max_gain, res["gain"])
-		if w * 4 <= n:
+		if is_longshot(n, w):
 			longshot_hits += 1
 		if res["life_up"]:
 			life_regains += 1
