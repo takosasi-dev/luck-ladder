@@ -85,6 +85,16 @@ func set_tutorial_done(done: bool) -> void:
 	write()
 
 
+# コレクションの選択(FR-20)。key は "card_back" か "table"。未解放の物・種類の違う物は選べない。
+func select(key: String, id: String) -> bool:
+	var wanted := "B-" if key == "card_back" else "T-" if key == "table" else ""
+	if wanted == "" or not id.begins_with(wanted) or not Progress.is_unlocked(id, data["achievements"], data["totals"]["total_score"]):
+		return false
+	data["settings"][key] = id
+	write()
+	return true
+
+
 func is_first_daily(date: String) -> bool:
 	return not data["daily"].has(date)
 

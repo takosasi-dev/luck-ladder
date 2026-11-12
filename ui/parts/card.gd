@@ -6,6 +6,7 @@ const S := preload("res://core/strings.gd")
 const T := preload("res://ui/theme/tokens.gd")
 const Kit := preload("res://ui/kit.gd")
 const Deck := preload("res://core/deck.gd")
+const CardBack := preload("res://ui/parts/card_back.gd")
 
 const SUIT_FILES := ["spade", "heart", "diamond", "club"]
 
@@ -99,7 +100,7 @@ func _draw() -> void:
 	if face_up and card >= 0:
 		_draw_face(r)
 	else:
-		draw_back(self, r)
+		CardBack.draw(self, r)
 	if edge.a > 0.0:
 		var glow := StyleBoxFlat.new()
 		glow.draw_center = false
@@ -147,26 +148,3 @@ func _draw_corner(text: String, tex: Texture2D, col: Color) -> void:
 		var s := size.y * 0.09
 		draw_texture_rect(tex, Rect2(cx - s / 2, top + font.get_height(fs) * 0.92, s, s), false, col)
 
-
-# 裏面 B-01「紺の格子」。ほかの裏面は Phase 4 のコレクションで足す。
-static func draw_back(ci: CanvasItem, r: Rect2) -> void:
-	ci.draw_style_box(Kit.box(T.IVORY, T.R_CARD), r)
-	var inner := r.grow(-5)
-	ci.draw_style_box(Kit.box(T.BACK_B01_BG, T.R_CARD - 4), inner)
-	var a := inner.grow(-3)
-	var line := Color(T.BACK_B01_LINE, 0.55)
-	var step := 10.5
-	var c := a.position.x + a.position.y
-	while c < a.end.x + a.end.y:
-		var xa := maxf(a.position.x, c - a.end.y)
-		var xb := minf(a.end.x, c - a.position.y)
-		if xa < xb:
-			ci.draw_line(Vector2(xa, c - xa), Vector2(xb, c - xb), line, 1.5, true)
-		c += step
-	c = a.position.x - a.end.y
-	while c < a.end.x - a.position.y:
-		var xa := maxf(a.position.x, c + a.position.y)
-		var xb := minf(a.end.x, c + a.end.y)
-		if xa < xb:
-			ci.draw_line(Vector2(xa, xa - c), Vector2(xb, xb - c), line, 1.5, true)
-		c += step

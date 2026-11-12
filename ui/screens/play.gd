@@ -21,6 +21,7 @@ const Ladder := preload("res://ui/parts/ladder.gd")
 const CounterPanel := preload("res://ui/parts/counter_panel.gd")
 const LifePips := preload("res://ui/parts/life_pips.gd")
 const VolumeRow := preload("res://ui/parts/volume_row.gd")
+const Toast := preload("res://ui/parts/toast.gd")
 const Fx := preload("res://ui/fx/fx.gd")
 
 const SIDE_KEYS := {KEY_UP: "H", KEY_W: "H", KEY_DOWN: "L", KEY_S: "L", KEY_RIGHT: "S", KEY_D: "S", KEY_SPACE: "B"}
@@ -28,7 +29,6 @@ const SIDE_BTN := {"H": "high", "L": "low", "S": "same", "B": "bank"}
 const BTN_TITLES := {"high": S.BTN_HIGH, "low": S.BTN_LOW, "same": S.BTN_SAME, "bank": S.BTN_BANK}
 const TUT_TARGETS := [[], ["card", "high", "low"], ["pot"], ["bank"]]
 const TUT_TEXTS := ["", S.TUT_1, S.TUT_2, S.TUT_3]
-const DIAG_WINDOW := 180
 
 var app
 var save
@@ -59,7 +59,7 @@ var btn := {}
 var fx
 var tut: Label
 var hl_frames := {}
-var diag: Label
+var toast
 var fade: ColorRect
 var pause_layer: Control
 
@@ -74,10 +74,6 @@ var end_result := {}
 var done := false
 var shown := {"score": 0.0, "pot": 0.0}
 var swipe_from := Vector2.INF
-var input_frame0 := 0
-var input_frames := 0
-var deltas: Array[float] = []
-var frame_no := 0
 
 
 func setup(app_ref, state, run_stats, mode_value: String, run_date: String, tutorial: bool) -> void:
@@ -102,6 +98,10 @@ func _ready() -> void:
 	_refresh()
 
 
+func _mode_text() -> String:
+	return S.MODE_DAILY % day_no if mode == "daily" else S.MODE_RUN
+
+
 # ---- 組み立て ----
 
 func _build() -> void:
@@ -120,7 +120,7 @@ func _build() -> void:
 	score_num = Kit.num_label("0", T.FS_SCORE, T.TEXT)
 	score_num.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	add_child(score_num)
-	mode_label = Kit.label(S.MODE_RUN, T.FS_SMALL, T.W_BODY, T.TEXT_DIM)
+	mode_label = Kit.label(_mode_text(), T.FS_SMALL, T.W_BODY, T.TEXT_DIM)
 	add_child(mode_label)
 	pips = LifePips.new()
 	add_child(pips)
@@ -159,8 +159,9 @@ func _build() -> void:
 	tut.add_theme_stylebox_override("normal", Kit.box(T.IVORY, 24, Color(0, 0, 0, 0), 0, true))
 	tut.visible = false
 	add_child(tut)
-	diag = Kit.label("", T.FS_SMALL, T.W_BODY, Color(T.TEXT_DIM, 0.7))
-	add_child(diag)
+	toast = Toast.new()
+	toast.shown.connect(func(): app.sfx.play("toast"))
+	add_child(toast)
 	fade = ColorRect.new()
 	fade.color = Color(T.BG_DEEP, 0.0)
 	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -203,7 +204,7 @@ func relayout(is_landscape: bool, view_rect: Rect2) -> void:
 	for key in btn:
 		Kit.place(btn[key], r[key])
 	Kit.place(fx, Rect2(Vector2.ZERO, size))
-	Kit.place(diag, o["diag"])
+	Kit.place(toast, o["toast"])
 	Kit.place(fade, view)
 	_show_tutorial()
 	if pause_layer != null:
@@ -333,7 +334,6 @@ func _act(side: String, show_press: bool) -> void:
 	if res["result"] == "invalid":
 		return
 	_finish_post()
-	input_frame0 = f
 	stats.note_counter(counter_on)
 	app.sfx.play("tap")
 	if show_press:
@@ -344,7 +344,11 @@ func _act(side: String, show_press: bool) -> void:
 		stats.on_guess(res, st)
 	if st.ended == "":
 		save.save_current(mode, st.seed_text, date, st.actions, stats.counter_shown)
-		run_ach.append_array(save.judge_move(stats, date))
+		# FR-17: 条件を満たした手の直後に達成にして、通知を出す
+		var fresh: Array = save.judge_move(stats, date)
+		run_ach.append_array(fresh)
+		for id in fresh:
+			toast.push(S.ACHIEVEMENTS[id][0])
 	else:
 		_finish_run()
 	_advance_tutorial()
@@ -428,7 +432,6 @@ func _on_flip_done(res: Dictionary) -> void:
 	busy = false
 	incoming.visible = false
 	card.scale.x = 1.0
-	input_frames = Engine.get_process_frames() - input_frame0
 	_refresh()
 	var r := Layout.rects(landscape)
 	var callout_at: Rect2 = Layout.over(landscape)["callout"]
@@ -522,7 +525,7 @@ func _open_pause() -> void:
 	pause_layer.add_child(scrim)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
-	box.add_child(Kit.label(S.PAUSED + "  " + S.MODE_RUN, T.FS_HEAD, T.W_NUM))
+	box.add_child(Kit.label(S.PAUSED + "  " + _mode_text(), T.FS_HEAD, T.W_NUM))
 	for item in [[S.BTN_RESUME, "brass", _toggle_pause], [S.BTN_SETTINGS, "green", app.open_settings], [S.BTN_TO_TITLE, "green", func(): to_title.emit()]]:
 		var b := Kit.button(item[0], T.FS_BODY, item[1])
 		b.custom_minimum_size = Vector2(520, 96)
@@ -548,13 +551,3 @@ func _set_volume(key: String, v: int) -> void:
 	if key == "sfx_volume":
 		app.sfx.play("tap")
 
-
-# ---- 診断表示(Phase 4 で消す。§8.3 の計測用) ----
-
-func _process(delta: float) -> void:
-	deltas.append(delta)
-	if deltas.size() > DIAG_WINDOW:
-		deltas.pop_front()
-	frame_no += 1
-	if frame_no % 20 == 0:
-		diag.text = S.DIAG % [roundi(Engine.get_frames_per_second()), roundi(1.0 / maxf(deltas.max(), 0.0001)), input_frames]

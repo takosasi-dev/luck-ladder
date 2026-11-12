@@ -9,9 +9,13 @@ const S := preload("res://core/strings.gd")
 const T := preload("res://ui/theme/tokens.gd")
 const Kit := preload("res://ui/kit.gd")
 const ShareText := preload("res://core/share_text.gd")
+const DayIndex := preload("res://core/day_index.gd")
+const B := preload("res://core/balance.gd")
 
+var app
 var info := {}
 var best_before := 0
+var copy_note: Label
 var sheet: Panel
 var scroll: ScrollContainer
 var box: VBoxContainer
@@ -22,7 +26,8 @@ var buttons: Array[Button] = []
 var used := false
 
 
-func setup(run_info: Dictionary, best_score_before: int) -> void:
+func setup(app_ref, run_info: Dictionary, best_score_before: int) -> void:
+	app = app_ref
 	info = run_info
 	best_before = best_score_before
 
@@ -48,13 +53,19 @@ func _ready() -> void:
 	box.add_child(score_num)
 	if s.counts_for_records() and st.score > best_before:
 		box.add_child(Kit.label(S.RESULT_BEST, T.FS_SMALL + 2, T.W_NUM, T.GOOD))
+	var date: String = info["date"]
+	var attempt: int = res["attempt"]
+	if s.mode == "daily" and attempt > 1:
+		# FR-14: 2 回目からは、初回の結果を並べて出す
+		var first: Dictionary = app.save.data["daily"].get(date, {})
+		box.add_child(Kit.label(S.DAILY_FIRST % ShareText.group(first.get("score", 0)) + "  " + S.RESULT_NOT_RECORDED, T.FS_SMALL, T.W_BODY, T.TEXT_DIM))
 	grid = GridContainer.new()
 	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	grid.add_theme_constant_override("h_separation", 10)
 	grid.add_theme_constant_override("v_separation", 10)
 	box.add_child(grid)
 	for item in [[S.RESULT_DRAWS, str(s.draws)], [S.RESULT_HITS, S.RESULT_HITS_VALUE % [s.hits, s.misses]], [S.RESULT_SAME, str(s.same_hits)], [S.RESULT_STREAK, str(s.best_streak)], [S.RESULT_BANKS, str(s.banks)]]:
-		grid.add_child(_stat(item[0], item[1]))
+		grid.add_child(Kit.stat(item[0], item[1]))
 	var ach: Array = info["new_achievements"]
 	if not ach.is_empty():
 		_wrap(S.RESULT_ACH % S.LIST_SEP.join(PackedStringArray(ach.map(func(id): return S.ACHIEVEMENTS[id][0]))), T.GOOD)
@@ -63,6 +74,24 @@ func _ready() -> void:
 		_wrap(S.RESULT_UNLOCK % S.LIST_SEP.join(PackedStringArray(unlocks.map(func(id): return S.CARD_BACKS.get(id, S.TABLES.get(id, id))))), T.BRASS_HI)
 	if res["title_after"] > res["title_before"]:
 		_wrap(S.RESULT_TITLE_UP % S.TITLES[res["title_after"] - 1], T.BRASS_HI)
+	# FR-15: 共有テキストを選択できる欄に出し、コピーは「試す」だけにする(INV-10)
+	var p := DayIndex.parse(date)
+	var no := DayIndex.day_no(p[0], p[1], p[2]) if not p.is_empty() else 0
+	var share := ShareText.build(s.mode, no, date, attempt, st.score, st.ended == "clear", s.draws, s.best_streak, B.SHARE_URL)
+	var share_box := Kit.text_box(share, false)
+	share_box.custom_minimum_size = Vector2(560, 112)
+	box.add_child(share_box)
+	var copy := Kit.button(S.BTN_COPY_RESULT, T.FS_SMALL + 2, "ghost")
+	copy.custom_minimum_size = Vector2(320, 96)
+	copy.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	copy_note = Kit.label("", T.FS_SMALL, T.W_BODY, T.TEXT_DIM)
+	copy_note.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+	copy_note.custom_minimum_size = Vector2(560, 0)
+	copy.pressed.connect(func():
+		DisplayServer.clipboard_set(share)
+		copy_note.text = S.COPY_TRIED)
+	box.add_child(copy)
+	box.add_child(copy_note)
 	btn_box = HBoxContainer.new()
 	btn_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	btn_box.add_theme_constant_override("separation", 14)
@@ -78,19 +107,6 @@ func _ready() -> void:
 
 func _set_score(v: float) -> void:
 	score_num.text = ShareText.group(roundi(v))
-
-
-func _stat(title: String, value: String) -> Control:
-	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", Kit.box(Color(T.FELT_HI, 0.5), 12))
-	p.custom_minimum_size = Vector2(190, 84)
-	var v := VBoxContainer.new()
-	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_theme_constant_override("separation", -2)
-	v.add_child(Kit.num_label(value, T.FS_BODY + 4, T.TEXT))
-	v.add_child(Kit.label(title, T.FS_SMALL, T.W_BODY, T.TEXT_DIM))
-	p.add_child(v)
-	return p
 
 
 func _wrap(text: String, color: Color) -> void:

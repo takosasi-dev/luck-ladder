@@ -23,6 +23,11 @@ const PlayScreen := preload("res://ui/screens/play.gd")
 const ResultScreen := preload("res://ui/screens/result.gd")
 const SettingsScreen := preload("res://ui/screens/settings.gd")
 const TitleScreen := preload("res://ui/screens/title.gd")
+const AchievementsScreen := preload("res://ui/screens/achievements.gd")
+const RecordsScreen := preload("res://ui/screens/records.gd")
+const CollectionScreen := preload("res://ui/screens/collection.gd")
+const SaveDataScreen := preload("res://ui/screens/save_data.gd")
+const ToastPart := preload("res://ui/parts/toast.gd")
 
 const FONT_PATH := "res://assets/fonts/NotoSansJP-Variable.ttf"
 const STRINGS_PATH := "res://core/strings.gd"
@@ -54,6 +59,9 @@ class StubApp extends RefCounted:
 		applied += 1
 
 	func open_settings() -> void:
+		pass
+
+	func open_data() -> void:
 		pass
 
 	func free_nodes() -> void:
@@ -723,7 +731,7 @@ func test_play_layout() -> String:
 					return "portrait: %s above y 768" % k
 		# 重ねて出す物(手ほどき・呼びかけ・一時停止の当たり)も画面の中に収まる
 		var o: Dictionary = PlayLayout.over(landscape)
-		for k in ["pause_hit", "callout", "tut1", "tut2", "tut3", "diag"]:
+		for k in ["pause_hit", "callout", "tut1", "tut2", "tut3", "toast"]:
 			if not o.has(k) or not screen.encloses(o[k]):
 				return "%s: over %s missing or outside" % [tag, k]
 		if o["pause_hit"].size.x < 96 or o["pause_hit"].size.y < 96 or not o["pause_hit"].encloses(r["pause"]):
@@ -866,7 +874,7 @@ func test_play_screen_runs_to_the_end() -> String:
 				if err == "":
 					# 結果画面も、同じ結果で両方の配置に組めること
 					var res = ResultScreen.new()
-					res.setup(got[0], 0)
+					res.setup(app, got[0], 0)
 					root.add_child(res)
 					for l2 in [true, false]:
 						res.relayout(l2, Rect2(Vector2.ZERO, PlayLayout.size(l2)))
@@ -935,7 +943,7 @@ func test_play_screen_moves() -> String:
 	settings.setup(app)
 	root.add_child(settings)
 	var title = TitleScreen.new()
-	title.setup(true, "")
+	title.setup({"has_continue": true, "daily_no": 315, "daily_first": 2720, "ach_done": 3, "ach_total": 35, "title_rank": 2})
 	root.add_child(title)
 	for l in [true, false]:
 		settings.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
@@ -947,6 +955,130 @@ func test_play_screen_moves() -> String:
 	title.free()
 	app.free_nodes()
 	Tokens.apply_settings({})
+	return err
+
+
+# ---- Phase 4 ----
+
+# FR-20: 選べるのは解放済みの物だけ。種類の違う ID・知らない ID は選べない。
+func test_collection_select() -> String:
+	var store = _fresh_store()
+	if store.select("card_back", "B-03") or store.select("table", "T-02") or store.select("card_back", "T-01") or store.select("table", "B-01") or store.select("card_back", "B-99") or store.select("name", "B-01"):
+		return "locked or wrong items must not be selectable"
+	if not store.select("card_back", "B-02") or store.data["settings"]["card_back"] != "B-02":
+		return "B-02 is unlocked from the start"
+	store.finish_run(_play("P1", "LL1:test:14")[1], "2026-11-11", 315)
+	if not store.select("card_back", "B-04") or not store.select("table", "T-02"):
+		return "B-04 (A-13) and T-02 (title 2) must unlock after a clear run"
+	store = SaveStore.new(TEST_SAVE)
+	if store.data["settings"]["card_back"] != "B-04" or store.data["settings"]["table"] != "T-02":
+		return "selection must persist"
+	return ""
+
+
+# テーブルの着せ替え: 色が差し替わり、T-01 に戻すと元の値に戻る。裏面とテーブルの定義が core と合っている。
+func test_table_palettes() -> String:
+	Tokens.apply_settings({"table": "T-02", "card_back": "B-07"})
+	if Tokens.BG_DEEP != Color("#1E0F14") or Tokens.BRASS != Color("#D9B36A") or Tokens.card_back != "B-07":
+		return "T-02 not applied"
+	Tokens.apply_settings({"table": "T-99", "card_back": "B-99"})
+	if Tokens.table != "T-01" or Tokens.card_back != "B-01":
+		return "unknown ids must fall back"
+	if Tokens.BG_DEEP != Color("#0E1F1C") or Tokens.BRASS_HI != Color("#F0D28A") or Tokens.BET_TOP != Color("#27594E"):
+		return "T-01 must restore the exact colors"
+	if Tokens.TABLES.keys() != Progress.TABLES.keys() or Tokens.BACKS.keys() != Progress.BACKS.keys():
+		return "ids differ between tokens and progress"
+	if S.TABLES.keys() != Progress.TABLES.keys() or S.CARD_BACKS.keys() != Progress.BACKS.keys():
+		return "ids differ between strings and progress"
+	return ""
+
+
+# FR-14・D-9: 今日の山札をプレイ画面で 2 回終える。1 回目だけが記録に数えられ、2 回目の結果画面は初回を並べて出す。
+func test_daily_through_play_screen() -> String:
+	Tokens.apply_settings({})
+	var app := StubApp.new(_fresh_store(), root)
+	var date := "2026-11-11"
+	var seed_text := DayIndex.daily_seed_text(date)
+	var all: String = _play("P1", seed_text)[0].actions
+	var err := ""
+	for attempt in [1, 2]:
+		var first: bool = app.save.is_first_daily(date)
+		if first != (attempt == 1):
+			err = "attempt %d: first_daily %s" % [attempt, first]
+		var r := RunStats.rebuild(seed_text, all.left(-1), "daily", first, true)
+		var play = PlayScreen.new()
+		play.setup(app, r["state"], r["stats"], "daily", date, false)
+		var got := []
+		play.finished.connect(func(info: Dictionary): got.append(info))
+		root.add_child(play)
+		play.relayout(true, Rect2(0, 0, 1280, 720))
+		if err == "" and not play.mode_label.text.contains("315"):
+			err = "mode label must show the daily number: " + play.mode_label.text
+		play._act(all.right(1), true)
+		play._skip_flip()
+		play._finish_post()
+		if err == "" and (got.size() != 1 or got[0]["result"]["attempt"] != attempt):
+			err = "attempt %d did not finish as expected" % attempt
+		if err == "":
+			var res = ResultScreen.new()
+			res.setup(app, got[0], 0)
+			root.add_child(res)
+			res.relayout(false, Rect2(0, 0, 720, 1280))
+			res.free()
+		play.free()
+	var d: Dictionary = app.save.data
+	if err == "" and (d["totals"]["runs"] != 1 or d["daily"][date]["attempts"] != 2 or d["top_runs"].size() != 1 or d["current_daily"] != null):
+		err = "only the first attempt counts: runs %d attempts %d" % [d["totals"]["runs"], d["daily"][date]["attempts"]]
+	if err == "" and not "A-23" in d["achievements"]:
+		err = "A-23 after the first daily"
+	app.free_nodes()
+	return err
+
+
+# FR-18〜FR-20・FR-25・FR-26: 一覧の画面と保存データの画面が、空の記録でも遊んだ後でも、両方の配置に組める。
+func test_pages_build() -> String:
+	Tokens.apply_settings({})
+	var app := StubApp.new(_fresh_store(), root)
+	var err := ""
+	for played in [false, true]:
+		if played:
+			app.save.finish_run(_play("P1", "LL1:test:14")[1], "2026-11-11", 315)
+		for script in [AchievementsScreen, RecordsScreen, CollectionScreen, SaveDataScreen]:
+			var page = script.new()
+			page.setup(app)
+			root.add_child(page)
+			for l in [true, false]:
+				page.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+			if script == AchievementsScreen and err == "" and page.side.text != S.ACH_COUNT % [app.save.data["achievements"].size(), 35]:
+				err = "achievement count: " + page.side.text
+			if script == RecordsScreen and err == "" and not played and page.body.get_child_count() != 3:
+				err = "empty records must show the empty line"
+			if script == SaveDataScreen and err == "":
+				page.import_box.text = "abc"
+				page._check_import()
+				if page.import_confirm.visible or page.note.text != S.IMPORT_FAILED:
+					err = "bad import text must be refused"
+				page.import_box.text = app.save.export_text()
+				page._check_import()
+				if err == "" and not page.import_confirm.visible:
+					err = "good import text must ask before overwriting"
+				if err == "" and page.erase_confirm.visible:
+					err = "erase needs a first press"
+			page.free()
+	app.free_nodes()
+	return err
+
+
+# E-19: 通知の待ちは 4 つまで。超えた分は出さない。
+func test_toast_queue() -> String:
+	var toast = ToastPart.new()
+	root.add_child(toast)
+	toast.size = Vector2(370, 76)
+	for i in 8:
+		toast.push("name %d" % i)
+	# 1 つ目は表示中、待ちは 4 つまで(2 つ目から 5 つ目)
+	var err := "" if toast.busy and toast.queue.size() == 4 else "queue size %d" % toast.queue.size()
+	toast.free()
 	return err
 
 

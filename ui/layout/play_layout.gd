@@ -25,7 +25,7 @@ const LANDSCAPE_OVER := {
 	"tut1": Rect2(596, 412, 330, 46),
 	"tut2": Rect2(322, 566, 460, 46),
 	"tut3": Rect2(966, 204, 300, 46),
-	"diag": Rect2(800, 10, 250, 44),
+	"toast": Rect2(896, 68, 370, 76),
 }
 
 const PORTRAIT := {
@@ -50,7 +50,7 @@ const PORTRAIT_OVER := {
 	"tut1": Rect2(130, 712, 460, 48),
 	"tut2": Rect2(130, 694, 460, 48),
 	"tut3": Rect2(380, 884, 320, 44),
-	"diag": Rect2(14, 1250, 692, 28),
+	"toast": Rect2(160, 100, 400, 76),
 }
 
 

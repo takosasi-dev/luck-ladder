@@ -4,7 +4,7 @@ extends Control
 
 const T := preload("res://ui/theme/tokens.gd")
 const Kit := preload("res://ui/kit.gd")
-const Card := preload("res://ui/parts/card.gd")
+const CardBack := preload("res://ui/parts/card_back.gd")
 
 var left := 51
 
@@ -28,4 +28,4 @@ func _draw() -> void:
 	draw_style_box(Kit.box(T.IVORY, T.R_CARD, Color(0, 0, 0, 0), 0, true), r)
 	# 下の札から描く。いちばん上の札がずれ 0
 	for k in range(layers - 1, -1, -1):
-		Card.draw_back(self, Rect2(Vector2(-3, -3) * k, size))
+		CardBack.draw(self, Rect2(Vector2(-3, -3) * k, size))

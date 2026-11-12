@@ -1,4 +1,4 @@
-# 画面の切り替え(タイトル → プレイ → 結果)と、保存・効果音・BGM・背景を持つ。窓の縦横比を見て、基準の座標を
+# 画面の切り替えと、保存・効果音・BGM・背景を持つ。窓の縦横比を見て、基準の座標を
 # 横長 1280×720 と縦長 720×1280 で付け替え、表示中の画面に relayout(横長か, 画面全体) を伝える(D-12・FR-22)。
 extends Control
 
@@ -8,6 +8,8 @@ const Kit := preload("res://ui/kit.gd")
 const RunState := preload("res://core/run_state.gd")
 const RunStats := preload("res://core/run_stats.gd")
 const DayIndex := preload("res://core/day_index.gd")
+const Ach := preload("res://core/achievements.gd")
+const Progress := preload("res://core/progress.gd")
 const SaveStore := preload("res://save/save_store.gd")
 const Sfx := preload("res://audio/sfx.gd")
 const Bgm := preload("res://audio/bgm.gd")
@@ -15,6 +17,12 @@ const Title := preload("res://ui/screens/title.gd")
 const Play := preload("res://ui/screens/play.gd")
 const Result := preload("res://ui/screens/result.gd")
 const Settings := preload("res://ui/screens/settings.gd")
+const SaveData := preload("res://ui/screens/save_data.gd")
+const PAGES := {
+	"achievements": preload("res://ui/screens/achievements.gd"),
+	"records": preload("res://ui/screens/records.gd"),
+	"collection": preload("res://ui/screens/collection.gd"),
+}
 
 const LANDSCAPE := Vector2i(1280, 720)
 const PORTRAIT := Vector2i(720, 1280)
@@ -23,7 +31,8 @@ var save
 var sfx
 var bgm
 var bg_shader: ColorRect
-var bg_plain: Control
+var bg_plain: ColorRect
+var bg_gradient: Gradient
 var stage: Control
 var screen: Control
 var overlay: Control
@@ -58,14 +67,11 @@ func _ready() -> void:
 # 布地の背景。標準は table_bg のシェーダー、控えめでは単色と四隅の減光の画像(§9.12・D-15)。
 func _build_background() -> void:
 	bg_plain = ColorRect.new()
-	bg_plain.color = T.BG_FELT
 	bg_plain.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var grad := Gradient.new()
-	grad.set_color(0, Color(T.BG_DEEP, 0.0))
-	grad.set_color(1, T.BG_DEEP)
-	grad.set_offset(0, 0.35)
+	bg_gradient = Gradient.new()
+	bg_gradient.set_offset(0, 0.35)
 	var tex := GradientTexture2D.new()
-	tex.gradient = grad
+	tex.gradient = bg_gradient
 	tex.fill = GradientTexture2D.FILL_RADIAL
 	tex.fill_from = Vector2(0.5, 0.4)
 	tex.fill_to = Vector2(1.05, 1.05)
@@ -87,7 +93,7 @@ func _build_background() -> void:
 	add_child(bg_shader)
 
 
-# 保存してある設定を、見た目の値・音量・背景に写す。設定を変えるたびに呼ぶ。
+# 保存してある設定を、見た目の値・音量・背景に写す。設定やコレクションを変えるたびに呼ぶ。
 func apply_settings() -> void:
 	var st: Dictionary = save.data["settings"]
 	T.apply_settings(st)
@@ -95,6 +101,13 @@ func apply_settings() -> void:
 	bgm.set_volume(int(st["bgm_volume"]))
 	bg_shader.visible = not T.lite
 	bg_plain.visible = T.lite
+	bg_plain.color = T.BG_FELT
+	bg_gradient.set_color(0, Color(T.BG_DEEP, 0.0))
+	bg_gradient.set_color(1, T.BG_DEEP)
+	var m: ShaderMaterial = bg_shader.material
+	m.set_shader_parameter("deep", T.BG_DEEP)
+	m.set_shader_parameter("felt", T.BG_FELT)
+	m.set_shader_parameter("hi", T.FELT_HI)
 
 
 func _on_window_resized() -> void:
@@ -143,7 +156,7 @@ func _today() -> String:
 
 # 画面の切り替え: 透明度と 12 px の横ずらし(§9.12)。
 func _swap(next: Control) -> void:
-	close_settings()
+	_close_overlay()
 	if screen != null:
 		screen.queue_free()
 	screen = next
@@ -158,66 +171,131 @@ func _swap(next: Control) -> void:
 	tw.tween_property(screen, "position:x", 0.0, T.SCREEN_FADE)
 
 
-func open_settings() -> void:
-	if overlay != null:
-		return
-	overlay = Settings.new()
-	overlay.setup(self)
-	overlay.closed.connect(close_settings)
+# ---- 重ね表示(設定・保存データ) ----
+
+func _open_overlay(o: Control) -> void:
+	_close_overlay()
+	overlay = o
 	stage.add_child(overlay)
 	overlay.relayout(landscape, view)
-	# 設定を開いている間は、下の画面にキー操作を渡さない
+	# 重ね表示を開いている間は、下の画面にキー操作を渡さない
 	if screen != null:
 		screen.set_process_unhandled_input(false)
 
 
-func close_settings() -> void:
+func _close_overlay() -> void:
 	if overlay == null:
 		return
 	overlay.queue_free()
 	overlay = null
 	if screen != null:
 		screen.set_process_unhandled_input(true)
+
+
+func open_settings() -> void:
+	var o := Settings.new()
+	o.setup(self)
+	o.closed.connect(close_settings)
+	_open_overlay(o)
+
+
+func close_settings() -> void:
+	_close_overlay()
+	if screen != null:
 		screen.relayout(landscape, view)
 
 
+func open_data() -> void:
+	var o := SaveData.new()
+	o.setup(self)
+	o.closed.connect(open_settings)
+	o.replaced.connect(_on_data_replaced)
+	_open_overlay(o)
+
+
+# 保存データを丸ごと入れ替えた後は、設定を写し直してタイトルから始める。
+func _on_data_replaced(message: String) -> void:
+	apply_settings()
+	notice = message
+	show_title()
+
+
+# ---- 画面 ----
+
 func show_title() -> void:
-	save.drop_stale_daily(_today())
+	var today := _today()
+	save.drop_stale_daily(today)
 	bgm.play("bgm_title")
-	var t := Title.new()
-	t.setup(save.current("run") != null, notice)
+	var t := DayIndex.parse(today)
+	var first = save.data["daily"].get(today)
+	var title := Title.new()
+	title.setup({
+		"has_continue": save.current("run") != null,
+		"notice": notice,
+		"daily_no": DayIndex.day_no(t[0], t[1], t[2]),
+		"daily_first": -1 if first == null else int(first["score"]),
+		"daily_ongoing": save.current("daily") != null,
+		"ach_done": save.data["achievements"].size(),
+		"ach_total": Ach.DEFS.size(),
+		"title_rank": Progress.title_rank(save.data["totals"]["total_score"]),
+	})
 	notice = ""
-	t.run_pressed.connect(start_new_run)
-	t.continue_pressed.connect(continue_run)
-	t.settings_pressed.connect(open_settings)
-	_swap(t)
+	title.run_pressed.connect(start_new_run)
+	title.continue_pressed.connect(func(): _continue("run"))
+	title.daily_pressed.connect(start_daily)
+	title.page_pressed.connect(_open_page)
+	_swap(title)
+
+
+func _open_page(page: String) -> void:
+	if page == "settings":
+		open_settings()
+		return
+	var p: Control = PAGES[page].new()
+	p.setup(self)
+	p.back_pressed.connect(show_title)
+	_swap(p)
 
 
 func start_new_run() -> void:
 	var seed_text := "LLR:%d:%d" % [int(Time.get_unix_time_from_system()), Time.get_ticks_usec()]
+	_start("run", seed_text, _today())
+
+
+# 今日の山札(FR-14)。途中の物があれば続きから。無ければ、端末の今日の日付の山札を始める。
+func start_daily() -> void:
+	if save.current("daily") != null:
+		_continue("daily")
+		return
 	var date := _today()
-	save.save_current("run", seed_text, date, "", bool(save.data["settings"]["counter"]))
-	_play(RunState.new(seed_text), RunStats.new("run", false), date)
+	_start("daily", DayIndex.daily_seed_text(date), date)
+
+
+func _start(mode: String, seed_text: String, date: String) -> void:
+	save.save_current(mode, seed_text, date, "", bool(save.data["settings"]["counter"]))
+	# 初回かどうかは始めた時点で決め、終わるまで変えない(D-9・E-10)
+	_play(RunState.new(seed_text), RunStats.new(mode, mode == "daily" and save.is_first_daily(date)), mode, date)
 
 
 # FR-16・E-9: 種と操作の列から復元する。失敗したら捨ててタイトルに 1 回知らせる。
-func continue_run() -> void:
-	var rec = save.current("run")
+func _continue(mode: String) -> void:
+	var rec = save.current(mode)
 	if rec == null:
 		show_title()
 		return
-	var r := RunStats.rebuild(rec["seed_text"], rec["actions"], "run", false, rec["counter_shown"])
+	var first: bool = mode == "daily" and save.is_first_daily(rec["date"])
+	var r := RunStats.rebuild(rec["seed_text"], rec["actions"], mode, first, rec["counter_shown"])
 	if not r["ok"] or r["state"].ended != "":
-		save.clear_current("run")
+		save.clear_current(mode)
 		notice = S.RESTORE_FAILED
 		show_title()
 		return
-	_play(r["state"], r["stats"], rec["date"])
+	_play(r["state"], r["stats"], mode, rec["date"])
 
 
-func _play(st, stats, date: String) -> void:
+func _play(st, stats, mode: String, date: String) -> void:
 	var p := Play.new()
-	p.setup(self, st, stats, "run", date, not bool(save.data["tutorial_done"]))
+	p.setup(self, st, stats, mode, date, not bool(save.data["tutorial_done"]))
 	var best_before: int = save.data["totals"]["best_score"]
 	p.finished.connect(func(info: Dictionary): _show_result(info, best_before))
 	p.to_title.connect(show_title)
@@ -227,7 +305,8 @@ func _play(st, stats, date: String) -> void:
 func _show_result(info: Dictionary, best_before: int) -> void:
 	bgm.play("bgm_title")
 	var r := Result.new()
-	r.setup(info, best_before)
-	r.retry_pressed.connect(start_new_run)
+	r.setup(self, info, best_before)
+	# 「もう一度」: ランは新しい山札、今日の山札は同じ山札の次の回(§9.1)
+	r.retry_pressed.connect(start_daily if info["mode"] == "daily" else start_new_run)
 	r.title_pressed.connect(show_title)
 	_swap(r)

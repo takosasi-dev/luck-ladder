@@ -2,13 +2,34 @@
 # 見た目の値はここにだけ置く。設定の「めくりの速さ」「演出」も、ここの speed と lite に写して使う。
 extends RefCounted
 
-# テーブル T-01(ミッドナイト)。着せ替えは Phase 4 で差し替える
-const BG_DEEP := Color("#0E1F1C")
-const BG_FELT := Color("#17352F")
-const FELT_HI := Color("#1F4A41")
-const BRASS := Color("#C9A45C")
-const BRASS_HI := Color("#F0D28A")
-const BRASS_LO := Color("#8A6A2C")
+# テーブル(§9.8): ID → [bg_deep, bg_felt, felt_hi, brass]。選んだ物を apply_settings が下の変数に写す
+const TABLES := {
+	"T-01": ["#0E1F1C", "#17352F", "#1F4A41", "#C9A45C"],
+	"T-02": ["#1E0F14", "#3A1822", "#53232F", "#D9B36A"],
+	"T-03": ["#0D1A10", "#1B3A22", "#27522F", "#BFA65A"],
+	"T-04": ["#1F1A12", "#3B3222", "#554830", "#E0C27A"],
+	"T-05": ["#0A0B0D", "#17191D", "#23262C", "#C9C9C9"],
+}
+# 札の裏面(§9.8): ID → [地の色, 線の色]。模様は ui/parts/card_back.gd が描く
+const BACKS := {
+	"B-01": ["#1C2B4A", "#C9A45C"], "B-02": ["#5A1E2A", "#F5EFE0"], "B-03": ["#17352F", "#F0D28A"], "B-04": ["#12402F", "#5FD3A0"],
+	"B-05": ["#F5EFE0", "#1C2B4A"], "B-06": ["#0B1026", "#F2EDE1"], "B-07": ["#2A2118", "#F0D28A"], "B-08": ["#0A0A0C", "#C9A45C"],
+}
+
+static var table := "T-01"
+static var card_back := "B-01"
+static var BG_DEEP := Color("#0E1F1C")
+static var BG_FELT := Color("#17352F")
+static var FELT_HI := Color("#1F4A41")
+static var BRASS := Color("#C9A45C")
+static var BRASS_HI := Color("#F0D28A")
+static var BRASS_LO := Color("#8A6A2C")
+static var BET_TOP := Color("#27594E")
+static var BET_BOTTOM := Color("#183D35")
+static var PANEL_BG := Color(0.055, 0.122, 0.11, 0.55)
+static var PANEL_EDGE := Color(0.788, 0.643, 0.361, 0.22)
+static var SCRIM := Color(0.031, 0.063, 0.055, 0.78)
+
 const IVORY := Color("#F5EFE0")
 const INK := Color("#1B1B1F")
 const SUIT_RED := Color("#B8323A")
@@ -20,19 +41,13 @@ const TEXT_DIM := Color("#9FB3AC")
 
 const CARD_TOP := Color("#FFFAF0")
 const CARD_BOTTOM := Color("#E6DCC4")
-const BACK_B01_BG := Color("#1C2B4A")
-const BACK_B01_LINE := Color("#C9A45C")
-const BET_TOP := Color("#27594E")
-const BET_BOTTOM := Color("#183D35")
 const SAME_TOP := Color("#3A3626")
 const SAME_BOTTOM := Color("#262318")
 const BANK_TOP := Color("#D9B76E")
 const BANK_BOTTOM := Color("#A9823C")
 const BANK_INK := Color("#1D1608")
 const RUNG_INK := Color("#2A1F08")
-const PANEL_BG := Color(0.055, 0.122, 0.11, 0.55)
-const PANEL_EDGE := Color(0.788, 0.643, 0.361, 0.22)
-const SCRIM := Color(0.031, 0.063, 0.055, 0.78)
+const MEDAL := {"bronze": Color("#C98B5C"), "silver": Color("#CFD6D9"), "gold": Color("#F0D28A")}
 const SHADOW := Color(0, 0, 0, 0.35)
 const CONFETTI := [Color("#F0D28A"), Color("#5FD3A0"), Color("#F5EFE0"), Color("#B8323A"), Color("#8FB7FF")]
 
@@ -86,6 +101,9 @@ const END_FADE := 0.5
 const SCREEN_FADE := 0.20
 const SCREEN_SHIFT := 12.0
 const CALLOUT := 0.8
+const TOAST_IN := 0.25
+const TOAST_STAY := 2.5
+const TOAST_OUT := 0.20
 const RESULT_COUNT := 0.8
 const SPARKS_HIT := 24
 const SPARKS_BANK := 40
@@ -99,10 +117,30 @@ static var speed := 1.0
 static var lite := false
 
 
-# 設定を写す(speed: "normal"/"fast"、fx: "full"/"lite")。
+# 設定を写す(speed: "normal"/"fast"、fx: "full"/"lite"、table と card_back は選んだ ID)。
 static func apply_settings(settings: Dictionary) -> void:
 	speed = 0.6 if settings.get("speed") == "fast" else 1.0
 	lite = settings.get("fx") == "lite"
+	card_back = settings.get("card_back", "B-01") if BACKS.has(settings.get("card_back")) else "B-01"
+	apply_table(settings.get("table", "T-01"))
+
+
+# テーブルの着せ替え: 背景 3 色と差し色を差し替え、そこから作る色(明るい真鍮色・ボタンの地・パネル)も合わせる。
+static func apply_table(id) -> void:
+	table = id if TABLES.has(id) else "T-01"
+	var c: Array = TABLES[table]
+	BG_DEEP = Color(c[0])
+	BG_FELT = Color(c[1])
+	FELT_HI = Color(c[2])
+	BRASS = Color(c[3])
+	var first := table == "T-01"
+	BRASS_HI = Color("#F0D28A") if first else BRASS.lightened(0.42)
+	BRASS_LO = Color("#8A6A2C") if first else BRASS.darkened(0.32)
+	BET_TOP = Color("#27594E") if first else FELT_HI.lightened(0.07)
+	BET_BOTTOM = Color("#183D35") if first else BG_FELT.lightened(0.03)
+	PANEL_BG = Color(BG_DEEP, 0.55)
+	PANEL_EDGE = Color(BRASS, 0.22)
+	SCRIM = Color(BG_DEEP.darkened(0.45), 0.78)
 
 
 # 速さの設定を掛けた時間。

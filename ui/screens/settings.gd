@@ -1,5 +1,5 @@
-# 設定の重ね表示(FR-21 のうち Phase 3 の分)。BGM と効果音の音量、演出、めくりの速さ、残り札の表示、
-# 手ほどきをもう一度。変えた時点で反映して保存する(FR-33)。名前・書き出し・読み込み・消去は後のフェーズで足す。
+# 設定の重ね表示(FR-21)。BGM と効果音の音量、演出、めくりの速さ、残り札の表示、手ほどきをもう一度、
+# 保存データ(書き出し・読み込み・消去は save_data.gd)。変えた時点で反映して保存する(FR-33)。名前は Phase 7 で足す。
 extends Control
 
 signal closed
@@ -82,6 +82,10 @@ func _rebuild() -> void:
 		tutorial_queued = true
 		_rebuild.call_deferred())
 	_row(S.SET_TUTORIAL, [again])
+	var data := Kit.button(S.BTN_DATA, T.FS_SMALL + 2, "ghost")
+	data.custom_minimum_size.x = 260
+	data.pressed.connect(func(): app.open_data())
+	_row(S.SET_DATA, [data])
 
 
 func _choice(title: String, options: Array, key: String) -> void:
@@ -106,7 +110,7 @@ func _row(title: String, controls: Array) -> void:
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(l)
 	for c in controls:
-		c.custom_minimum_size = Vector2(150, 96)
+		c.custom_minimum_size = Vector2(maxf(150, c.custom_minimum_size.x), 96)
 		h.add_child(c)
 	rows.add_child(h)
 

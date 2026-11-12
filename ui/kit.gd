@@ -166,4 +166,41 @@ static func disc(diameter: int, color: Color) -> Texture2D:
 	return _discs[key]
 
 
+# 数字 1 つと、その下の小さな名前を入れた箱(結果・記録)。
+static func stat(title: String, value: String, width: float = 190.0) -> Control:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", box(Color(T.FELT_HI, 0.5), 12))
+	p.custom_minimum_size = Vector2(width, 84)
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", -2)
+	v.add_child(num_label(value, T.FS_BODY + 4, T.TEXT))
+	v.add_child(label(title, T.FS_SMALL, T.W_BODY, T.TEXT_DIM))
+	p.add_child(v)
+	return p
+
+
+# 選択できる文字欄(共有テキスト・保存データの書き出し)。スマホで画面のキーボードは出さない。
+static func text_box(text: String, editable: bool, hint: String = "") -> TextEdit:
+	var t := TextEdit.new()
+	t.text = text
+	t.editable = editable
+	t.placeholder_text = hint
+	t.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	# 区切りの無い長い文字(保存データ)も、欄の幅で折り返す
+	t.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+	t.virtual_keyboard_enabled = editable
+	t.context_menu_enabled = false
+	t.add_theme_font_override("font", font(T.W_BODY))
+	t.add_theme_font_size_override("font_size", T.FS_SMALL)
+	t.add_theme_color_override("font_color", T.TEXT)
+	t.add_theme_color_override("font_readonly_color", T.TEXT_DIM)
+	t.add_theme_color_override("font_placeholder_color", Color(T.TEXT_DIM, 0.6))
+	for s in ["normal", "focus", "read_only"]:
+		var b := box(Color(0, 0, 0, 0.35), 10, Color(T.TEXT_DIM, 0.3), 1)
+		b.set_content_margin_all(10)
+		t.add_theme_stylebox_override(s, b)
+	return t
+
+
 # 3 桁ごとの区切りは core/share_text.gd の group を使う(数の書式を 2 か所に書かない)。
