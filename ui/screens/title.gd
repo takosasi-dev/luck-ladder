@@ -1,5 +1,5 @@
 # タイトル画面(FR-2・画面設計書 §3.1)。題名、梯子の段の灯り、「つづきから」「ラン」「今日の山札」
-# 「実績」「コレクション」「記録」「設定」、称号、版を出す。「対戦」は Phase 5 で足す。
+# 「対戦」(Phase 7 まで準備中で押せない)「実績」「コレクション」「記録」「設定」、称号、版を出す。
 # 途中のランがあるのに「ラン」を押したら捨てるかを確かめ(E-11)、今日の山札の 2 回目からは 1 行断ってから始める(FR-14)。
 extends Control
 
@@ -26,6 +26,7 @@ var menu: VBoxContainer
 var tall: Array[Control] = []
 var short: Array[Control] = []
 var main_buttons: Array[Button] = []
+var versus: Button
 var confirm_layer: Control
 var confirm_args := []
 var rank_label: Label
@@ -67,7 +68,13 @@ func _ready() -> void:
 		daily += "  " + S.DAILY_ONGOING
 	elif info.get("daily_first", -1) >= 0:
 		daily += "  " + S.DAILY_FIRST % ShareText.group(info["daily_first"])
-	_button(daily, "green", _on_daily, short)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	menu.add_child(row)
+	_button(daily, "green", _on_daily, short, row).size_flags_stretch_ratio = 2.0
+	# 対戦は Phase 7 で作るまで、押せないボタンとして出しておく(仕様書 §11 の Phase 5)
+	versus = _button(S.BTN_VERSUS + "  " + S.COMING_SOON, "ghost", func(): pass, short, row)
+	versus.disabled = true
 	var ach := S.BTN_ACH + "  " + S.ACH_COUNT % [info.get("ach_done", 0), info.get("ach_total", 0)]
 	_pair([[ach, "achievements"], [S.BTN_COLLECTION, "collection"]])
 	_pair([[S.BTN_RECORDS, "records"], [S.BTN_SETTINGS, "settings"]])

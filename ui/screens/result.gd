@@ -79,7 +79,7 @@ func _ready() -> void:
 	var no := DayIndex.day_no(p[0], p[1], p[2]) if not p.is_empty() else 0
 	var share := ShareText.build(s.mode, no, date, attempt, st.score, st.ended == "clear", s.draws, s.best_streak, B.SHARE_URL)
 	var share_box := Kit.text_box(share, false)
-	share_box.custom_minimum_size = Vector2(560, 112)
+	share_box.custom_minimum_size = Vector2(560, 138)
 	box.add_child(share_box)
 	var copy := Kit.button(S.BTN_COPY_RESULT, T.FS_SMALL + 2, "ghost")
 	copy.custom_minimum_size = Vector2(320, 96)

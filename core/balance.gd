@@ -13,7 +13,7 @@ const LIFE_BONUS := 1000
 const TOP_RUNS := 10
 const DAILY_KEEP := 60
 const SWIPE_MIN := 60
-const SHARE_URL := ""
+const SHARE_URL := "https://takosasi-dev.github.io/luck-ladder/"
 
 const MATCH_SEC_CHOICES := [120, 180, 300, 0]
 const MATCH_SEC_DEFAULT := 180

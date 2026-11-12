@@ -4,7 +4,7 @@
 
 **▶ 開く: https://takosasi-dev.github.io/luck-ladder/** (インストール不要)
 
-> **開発中です。** 1 人用(ラン・今日の山札・実績・記録・コレクション)を遊べます。対戦はこれから足します。調整値は、まだ人に遊んでもらって決めた値ではありません。
+> **v0.1.0(開発中)。** 1 人用(ラン・今日の山札・実績・記録・コレクション)を遊べます。対戦は準備中です。調整値は、まだ人に遊んでもらって決めた値ではありません。変更の履歴は [CHANGELOG.md](CHANGELOG.md) にあります。
 
 - エンジン: Godot 4.7.2(GDScript、Compatibility レンダラー、Web 書き出し)
 - 対応(予定): デスクトップの Chrome・Edge・Firefox、スマホの Chrome(Android)・Safari(iOS)。スマホの実機では、まだ確かめていません
@@ -36,6 +36,7 @@
 ```
 LuckLadder 今日の山札 No.316 (2026-11-12) 初回
 1,148点 / 6枚 / 最大1連続
+https://takosasi-dev.github.io/luck-ladder/
 ```
 
 ## やりこみ

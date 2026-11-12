@@ -504,6 +504,8 @@ func test_share_text() -> String:
 		return "run clear: " + r
 	if not S.SHARE_LINE.begins_with("%s") or not S.SHARE_NTH.begins_with("%d"):
 		return "share format strings"
+	if not B.SHARE_URL.begins_with("https://") or not B.SHARE_URL.ends_with("/"):
+		return "SHARE_URL: " + B.SHARE_URL
 	return ""
 
 
@@ -948,6 +950,8 @@ func test_play_screen_moves() -> String:
 	for l in [true, false]:
 		settings.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 		title.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+	if err == "" and not title.versus.disabled:
+		err = "versus must stay disabled until Phase 7"
 	settings._store("fx", "lite")
 	if err == "" and (app.save.data["settings"]["fx"] != "lite" or app.applied != 1):
 		err = "settings must save and apply at once"
