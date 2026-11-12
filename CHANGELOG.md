@@ -2,7 +2,9 @@
 
 書き方は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/)、版の付け方は [セマンティック バージョニング](https://semver.org/lang/ja/) に従います。
 
-## [Unreleased]
+## [0.2.0] - 2026-11-12
+
+ブラックジャックとビデオポーカーを足した版です。
 
 ### Added
 
@@ -41,4 +43,5 @@
 - スマホの実機では、まだ確かめていません
 - 調整値は、人に遊んでもらって決めた値ではありません
 
+[0.2.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.2.0
 [0.1.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.1.0
