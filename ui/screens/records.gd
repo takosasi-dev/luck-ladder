@@ -1,5 +1,5 @@
 # 記録画面(FR-19・画面設計書 §3.4)。通算の値 10 個と、得点の上位 10 ランを出す。
-# 上位ランが 0 件のときは「まだ記録がありません」。その下に、持ち点とブラックジャックの数(追補 1 §7.6)。
+# 上位ランが 0 件のときは「まだ記録がありません」。その下に、持ち点・ブラックジャック・ポーカーの数(追補 1 §7.6)。
 extends "res://ui/screens/page.gd"
 
 const ShareText := preload("res://core/share_text.gd")
@@ -41,11 +41,14 @@ func _fill() -> void:
 	for part in [
 		[S.WALLET, [[S.WALLET, c["wallet"]], [S.REC_WALLET_PEAK, c["wallet_peak"]], [S.REC_REFILLS, c["refills"]]]],
 		[S.BTN_BJ, [[S.REC_HANDS, c["bj_hands"]], [S.REC_WINS, c["bj_wins"]], [S.REC_NATURALS, c["bj_naturals"]]]],
+		[S.BTN_POKER, [[S.REC_HANDS, c["pk_hands"]], [S.REC_PK_PAID, c["pk_paid"]], [S.REC_PK_BEST, S.POKER_HANDS[c["pk_best"]]]]],
 	]:
 		section(part[0])
 		var cg := grid(cols)
 		for item in part[1]:
-			cg.add_child(Kit.stat(item[0], ShareText.group(item[1]), cell_w))
+			# 役の名前は日本語なので、数字用の字ではなく本文の字で出す(INV-6)
+			var is_text: bool = item[1] is String
+			cg.add_child(Kit.stat(item[0], item[1] if is_text else ShareText.group(item[1]), cell_w, not is_text))
 
 
 func _row(rank: int, e: Dictionary) -> Control:

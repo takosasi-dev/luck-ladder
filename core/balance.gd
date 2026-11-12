@@ -41,3 +41,5 @@ const BJ_DEALER_STAND := 17
 # 最初の 2 枚で 21 の戻り = 賭けた点 × 5 ÷ 2(賭ける点はどれも偶数なので割り切れる)
 const BJ_NATURAL_NUM := 5
 const BJ_NATURAL_DEN := 2
+# ポーカーの倍率(§6.3)。並びは役の番号(0 = 役なし … 9 = ロイヤルフラッシュ)
+const POKER_PAYS := [0, 1, 2, 3, 4, 6, 9, 25, 50, 250]

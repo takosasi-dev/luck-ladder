@@ -32,6 +32,8 @@ const BJ := preload("res://core/bj_rules.gd")
 const CasinoTable := preload("res://ui/screens/casino_table.gd")
 const BlackjackScreen := preload("res://ui/screens/blackjack.gd")
 const Main := preload("res://ui/main.gd")
+const Poker := preload("res://core/poker_rules.gd")
+const PokerScreen := preload("res://ui/screens/poker.gd")
 
 const FONT_PATH := "res://assets/fonts/NotoSansJP-Variable.ttf"
 const STRINGS_PATH := "res://core/strings.gd"
@@ -46,6 +48,13 @@ class FailStore extends SaveStore:
 
 # 追補 1: 決めた並びの山札で配る卓。
 class FixedBlackjack extends BlackjackScreen:
+	var fixed: PackedInt32Array
+
+	func _new_deck() -> PackedInt32Array:
+		return fixed
+
+
+class FixedPoker extends PokerScreen:
 	var fixed: PackedInt32Array
 
 	func _new_deck() -> PackedInt32Array:
@@ -964,16 +973,14 @@ func test_play_screen_moves() -> String:
 		title.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 	if err == "" and not title.versus.disabled:
 		err = "versus must stay disabled until Phase 7"
-	# 追補 1 §7.1: ブラックジャックは main が知っている画面へ行く。ポーカーは追補の Phase 2 まで押せない
+	# 追補 1 §7.1: ブラックジャックとポーカーのボタンは押せて、main が知っている画面へ行く
 	var pages := []
 	title.page_pressed.connect(func(p: String): pages.append(p))
 	for b in title.menu.find_children("*", "Button", true, false):
-		if b.text == S.BTN_BJ:
+		if b.text in [S.BTN_BJ, S.BTN_POKER] and not b.disabled:
 			b.pressed.emit()
-		elif b.text.begins_with(S.BTN_POKER) and err == "" and not b.disabled:
-			err = "poker must stay disabled until it exists"
-	if err == "" and (pages != ["blackjack"] or not Main.PAGES.has("blackjack")):
-		err = "title must open blackjack: " + str(pages)
+	if err == "" and (pages != ["blackjack", "poker"] or not Main.PAGES.has_all(pages)):
+		err = "title must open blackjack and poker: " + str(pages)
 	settings._store("fx", "lite")
 	if err == "" and (app.save.data["settings"]["fx"] != "lite" or app.applied != 1):
 		err = "settings must save and apply at once"
@@ -1080,8 +1087,8 @@ func test_pages_build() -> String:
 				page.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 			if script == AchievementsScreen and err == "" and page.side.text != S.ACH_COUNT % [app.save.data["achievements"].size(), 35]:
 				err = "achievement count: " + page.side.text
-			# 通算の表・見出し・「まだ記録がありません」の 3 つと、追補 1 の見出しと表が 2 組
-			if script == RecordsScreen and err == "" and not played and page.body.get_child_count() != 7:
+			# 通算の表・見出し・「まだ記録がありません」の 3 つと、追補 1 の見出しと表が 3 組
+			if script == RecordsScreen and err == "" and not played and page.body.get_child_count() != 9:
 				err = "empty records must show the empty line and the wallet sections"
 			if script == SaveDataScreen and err == "":
 				page.import_box.text = "abc"
@@ -1374,6 +1381,122 @@ func test_blackjack_screen() -> String:
 	t._finish_tween()
 	if err == "" and (t.phase != "bet" or t.message.text != S.BJ_RESULTS["natural"] or w["wallet"] != 1075 or w["bj_naturals"] != 1 or t.totals["dealer"].text != "16"):
 		err = "natural: %s wallet %d" % [t.message.text, w["wallet"]]
+	t.free()
+	app.free_nodes()
+	return err
+
+
+# AC-A6: §6.3 の役。[数字 5 つ, 同じマークか, 役の番号]
+func test_poker_hands() -> String:
+	if B.POKER_PAYS != [0, 1, 2, 3, 4, 6, 9, 25, 50, 250] or S.POKER_HANDS.size() != B.POKER_PAYS.size():
+		return "pays and hand names must have the 10 rows of the table"
+	for c in [
+		[[10, 11, 12, 13, 1], true, 9],
+		[[13, 1, 10, 12, 11], true, 9],
+		[[5, 6, 7, 8, 9], true, 8],
+		[[1, 2, 3, 4, 5], true, 8],
+		[[9, 9, 9, 9, 13], false, 7],
+		[[3, 3, 3, 11, 11], false, 6],
+		[[2, 5, 9, 11, 13], true, 5],
+		[[12, 13, 1, 2, 3], true, 5],
+		[[5, 6, 7, 8, 9], false, 4],
+		[[1, 2, 3, 4, 5], false, 4],
+		[[10, 11, 12, 13, 1], false, 4],
+		[[7, 7, 7, 2, 13], false, 3],
+		[[4, 4, 9, 9, 13], false, 2],
+		[[11, 11, 2, 5, 9], false, 1],
+		[[1, 1, 2, 5, 9], false, 1],
+		[[10, 10, 2, 5, 9], false, 0],
+		[[12, 13, 1, 2, 3], false, 0],
+		[[2, 5, 9, 11, 13], false, 0],
+	]:
+		var hand := []
+		for i in 5:
+			hand.append(_c(c[0][i], 0 if c[1] else i % 4))
+		if Poker.evaluate(hand) != c[2]:
+			return "%s flush %s -> %d, want %d" % [str(c[0]), c[1], Poker.evaluate(hand), c[2]]
+	return ""
+
+
+# AC-A7: 交換。残さない札だけが、山札の 6 枚目から順に、左から入れ替わる。交換は 1 回だけ。
+func test_poker_draw() -> String:
+	# 0〜51 の順の山札: 最初の 5 枚はスペードの A〜5、続きは 6〜
+	for c in [[[0, 2], [0, 5, 2, 6, 7], 5], [[0, 1, 2, 3, 4], [0, 1, 2, 3, 4], 8], [[], [5, 6, 7, 8, 9], 8], [[4], [5, 6, 7, 8, 4], 8]]:
+		var h = Poker.new(_ordered_deck(), 100)
+		if str(h.cards) != str([0, 1, 2, 3, 4]) or h.done:
+			return "the deal must be the first 5 cards"
+		h.draw(c[0])
+		if str(h.cards) != str(c[1]) or not h.done or h.hand_rank != c[2] or h.returned != 100 * B.POKER_PAYS[c[2]]:
+			return "hold %s -> %s rank %d returned %d" % [str(c[0]), str(h.cards), h.hand_rank, h.returned]
+		h.draw([])
+		if str(h.cards) != str(c[1]):
+			return "a second draw must do nothing"
+	return ""
+
+
+# AC-A11: ポーカーの卓を両方の配置に組み、勝負を最後まで進める。動きの間と同じフレームの入力は捨てる。
+func test_poker_screen() -> String:
+	Tokens.apply_settings({})
+	CasinoTable.last_bets.clear()
+	var app := StubApp.new(_fresh_store(), root)
+	app.sfx.set_volume(0)
+	var t = FixedPoker.new()
+	t.setup(app)
+	root.add_child(t)
+	t.relayout(true, Rect2(0, 0, 1280, 720))
+	var w: Dictionary = app.save.data["casino"]
+	var err := ""
+	if t.phase != "bet" or t.cards[0].visible or t.pay_mark.visible or t._extra_key(KEY_1):
+		err = "must open in the betting phase with no cards"
+	# J のペアが配られ、3〜5 枚目を替えると J がもう 1 枚来てスリーカード
+	t.fixed = _ordered_deck([_c(11), _c(11, 1), _c(2), _c(5, 1), _c(9, 2), _c(11, 2), _c(3, 3), _c(4, 3)])
+	t._deal()
+	t.last_input_frame = -1
+	t._toggle(0)
+	if err == "" and (not t.busy or not t.holds.is_empty() or SaveStore.new(TEST_SAVE).data["casino"]["wallet"] != 900):
+		err = "deal must take the bet, and input during the deal must be dropped"
+	t._finish_tween()
+	if err == "" and (t.busy or t.phase != "play" or t.marked != 1 or not t.pay_mark.visible or not t.cards[4].visible or t.actions["draw"].disabled or not t.back.disabled):
+		err = "after the deal the pair of jacks must be marked, got %d" % t.marked
+	t.last_input_frame = -1
+	t._toggle(0)
+	# 同じフレームの 2 つ目は捨てる(E-A4)
+	t._toggle(1)
+	if err == "" and str(t.holds) != str([0]):
+		err = "second input in the same frame must be dropped: " + str(t.holds)
+	for i in [1, 1, 1]:
+		t.last_input_frame = -1
+		t._toggle(i)
+	if err == "" and (str(t.holds) != str([0, 1]) or not t.hold_marks[1].visible or t.hold_marks[2].visible or t.cards[0].position.y != t.hits[0].position.y - t.HOLD_LIFT or t.cards[2].position.y != t.hits[2].position.y):
+		err = "held cards must be marked and lifted: " + str(t.holds)
+	# キーの 3 で 3 枚目を残し、もう一度で外す(§7.5)
+	t.last_input_frame = -1
+	if err == "" and (not t._extra_key(KEY_3) or str(t.holds) != str([0, 1, 2]) or t._extra_key(KEY_SPACE)):
+		err = "key 3 must hold the third card"
+	t.last_input_frame = -1
+	t._extra_key(KEY_3)
+	t.last_input_frame = -1
+	t._act("draw")
+	if err == "" and (w["wallet"] != 1200 or w["pk_hands"] != 1 or w["pk_paid"] != 1 or w["pk_best"] != 3 or t.wallet_num.text != "900"):
+		err = "the result must be saved at once and shown after the motion: " + str(w)
+	t.relayout(false, Rect2(0, 0, 720, 1280))
+	if err == "" and (t.phase != "bet" or t.message.text != S.POKER_HANDS[3] or t.marked != 3 or t.wallet_num.text != "1,200" or not t.holds.is_empty() or t.cards[2].card != _c(11, 2) or t.cards[0].card != _c(11)):
+		err = "three of a kind: %s marked %d" % [t.message.text, t.marked]
+	# 役なしを全部残す。いちばん良い役は下がらない
+	t.fixed = _ordered_deck([_c(2), _c(5, 1), _c(9, 2), _c(11, 3), _c(13)])
+	t.last_input_frame = -1
+	t._deal()
+	t._finish_tween()
+	if err == "" and (t.marked != 0 or t.pay_mark.visible):
+		err = "no row may be marked without a hand"
+	for i in 5:
+		t.last_input_frame = -1
+		t._toggle(i)
+	t.last_input_frame = -1
+	t._act("draw")
+	t._finish_tween()
+	if err == "" and (t.message.text != S.POKER_HANDS[0] or w["wallet"] != 1100 or w["pk_hands"] != 2 or w["pk_paid"] != 1 or w["pk_best"] != 3 or t.cards[4].card != _c(13)):
+		err = "no hand: %s %s" % [t.message.text, str(w)]
 	t.free()
 	app.free_nodes()
 	return err

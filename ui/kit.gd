@@ -166,15 +166,15 @@ static func disc(diameter: int, color: Color) -> Texture2D:
 	return _discs[key]
 
 
-# 数字 1 つと、その下の小さな名前を入れた箱(結果・記録)。
-static func stat(title: String, value: String, width: float = 190.0) -> Control:
+# 数字 1 つと、その下の小さな名前を入れた箱(結果・記録)。値が日本語のときは numeric を偽にする。
+static func stat(title: String, value: String, width: float = 190.0, numeric: bool = true) -> Control:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", box(Color(T.FELT_HI, 0.5), 12))
 	p.custom_minimum_size = Vector2(width, 84)
 	var v := VBoxContainer.new()
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_theme_constant_override("separation", -2)
-	v.add_child(num_label(value, T.FS_BODY + 4, T.TEXT))
+	v.add_child(num_label(value, T.FS_BODY + 4, T.TEXT) if numeric else label(value, T.FS_BODY, T.W_NUM))
 	v.add_child(label(title, T.FS_SMALL, T.W_BODY, T.TEXT_DIM))
 	p.add_child(v)
 	return p

@@ -23,6 +23,7 @@ const PAGES := {
 	"records": preload("res://ui/screens/records.gd"),
 	"collection": preload("res://ui/screens/collection.gd"),
 	"blackjack": preload("res://ui/screens/blackjack.gd"),
+	"poker": preload("res://ui/screens/poker.gd"),
 }
 
 const LANDSCAPE := Vector2i(1280, 720)

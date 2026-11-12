@@ -75,9 +75,8 @@ func _ready() -> void:
 	# 対戦は Phase 7 で作るまで、押せないボタンとして出しておく(仕様書 §11 の Phase 5)
 	versus = _button(S.BTN_VERSUS + "  " + S.COMING_SOON, "ghost", func(): pass, short, row)
 	versus.disabled = true
-	# 追補 1 §7.1。ポーカーは、追補の Phase 2 で作るまで押せないボタンとして出しておく
-	_pair([[S.BTN_BJ, "blackjack"], [S.BTN_POKER + "  " + S.COMING_SOON, "poker"]], "green")
-	(short.back() as Button).disabled = true
+	# 追補 1 §7.1
+	_pair([[S.BTN_BJ, "blackjack"], [S.BTN_POKER, "poker"]], "green")
 	var ach := S.BTN_ACH + "  " + S.ACH_COUNT % [info.get("ach_done", 0), info.get("ach_total", 0)]
 	_pair([[ach, "achievements"], [S.BTN_COLLECTION, "collection"]])
 	_pair([[S.BTN_RECORDS, "records"], [S.BTN_SETTINGS, "settings"]])

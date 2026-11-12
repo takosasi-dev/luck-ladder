@@ -141,6 +141,13 @@ const REC_REFILLS := "補充した回数"
 const REC_HANDS := "勝負の数"
 const REC_WINS := "勝った数"
 const REC_NATURALS := "ブラックジャックの数"
+# 並びは役の番号(0 = 役なし … 9 = ロイヤルフラッシュ。core/poker_rules.gd)
+const POKER_HANDS := ["役なし", "J 以上のペア", "ツーペア", "スリーカード", "ストレート", "フラッシュ", "フルハウス", "フォーカード", "ストレートフラッシュ", "ロイヤルフラッシュ"]
+const PAY_TIMES := "×%s"
+const BTN_DRAW := "交換"
+const HOLD := "残す"
+const REC_PK_PAID := "配当が付いた数"
+const REC_PK_BEST := "いちばん良い役"
 
 # 結果(FR-13)
 const RESULT_GAMEOVER := "ラン終了"

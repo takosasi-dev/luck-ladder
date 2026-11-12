@@ -88,6 +88,11 @@ func _on_action(_key: String) -> void:
 	pass
 
 
+# ボタンに無い、そのゲームだけのキー。受けたら真。
+func _extra_key(_keycode: int) -> bool:
+	return false
+
+
 # ---- 組み立てと配置 ----
 
 func _ready() -> void:
@@ -302,6 +307,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		_pick_bet(B.BET_CHOICES[BET_KEYS.find(k)])
 	elif phase == "play" and _key_action(k) != "":
 		_act(_key_action(k))
-	else:
+	elif not _extra_key(k):
 		return
 	get_viewport().set_input_as_handled()

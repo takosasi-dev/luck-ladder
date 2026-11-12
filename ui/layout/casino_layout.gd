@@ -1,5 +1,6 @@
 # ブラックジャックとポーカーの卓の、部品の位置と大きさ(追補 1 §7.2〜§7.4)。位置の数字はここにだけ置く。
 # 基準は横長 1280×720 と縦長 720×1280。bets は賭ける点のボタン 4 つを並べる帯、actions は勝負の段階のボタンを並べる帯。
+# bj_ はブラックジャック、pk_ はポーカー(pk_pays は配当表、pk_message は役の名前を出す場所)。
 extends RefCounted
 
 const LANDSCAPE := {
@@ -21,6 +22,10 @@ const LANDSCAPE := {
 	"bj_player_total": Rect2(90, 426, 180, 60),
 	"bj_player": Rect2(290, 350, 700, 190),
 	"bj_card": Vector2(136, 190),
+	"pk_pays": Rect2(24, 104, 340, 432),
+	"pk_cards": Rect2(350, 200, 900, 210),
+	"pk_card": Vector2(150, 210),
+	"pk_message": Rect2(350, 436, 900, 64),
 }
 
 const PORTRAIT := {
@@ -42,6 +47,10 @@ const PORTRAIT := {
 	"bj_player_total": Rect2(370, 560, 120, 44),
 	"bj_player": Rect2(30, 610, 660, 238),
 	"bj_card": Vector2(170, 238),
+	"pk_pays": Rect2(120, 180, 480, 342),
+	"pk_cards": Rect2(10, 580, 700, 180),
+	"pk_card": Vector2(128, 180),
+	"pk_message": Rect2(0, 772, 720, 64),
 }
 
 
