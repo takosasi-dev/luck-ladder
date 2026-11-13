@@ -1752,6 +1752,21 @@ func test_net_lab_builds() -> String:
 	for l in [true, false]:
 		lab.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 	var err := ""
+	# 初めは「招待を作る」だけが出て、つながったかの表示は「まだ」。招待を作る側は、名前と IPv6 が初めから入
+	if lab.verdict.text != S.LAB_VERDICT_NO or not lab.make_button.visible or lab.url_box.visible or lab.copy_button.visible or lab.ping_button.visible or lab.detail.visible:
+		err = "the first view must show only the invite button"
+	var guest = NetLab.new()
+	guest.setup(app, bridge, "?j=abc&v6=1")
+	if err == "" and (not lab.with_mdns or not lab.with_v6 or guest.with_mdns or not guest.with_v6):
+		err = "a host starts with both switches on, a guest follows the invite"
+	guest.free()
+	# 届いたら ○ と「送る試験」、失敗したら × と「招待を作る」
+	lab._on_received(JSON.stringify({"t": "hello"}))
+	if err == "" and (lab.verdict.text != S.LAB_VERDICT_OK or not lab.ping_button.visible or lab.copy_button.visible):
+		err = "a hello must show the connected view"
+	lab._fail(S.LAB_TIMEOUT, "connect_timeout")
+	if err == "" and (lab.verdict.text != S.LAB_VERDICT_FAIL or lab.ping_button.visible or not lab.make_button.visible):
+		err = "a failure must show the failed view"
 	lab._take_text("not a code", "box")
 	if lab.status.text != S.NET_UNREADABLE or lab.rtc != null:
 		err = "junk text must be refused without starting a connection"
