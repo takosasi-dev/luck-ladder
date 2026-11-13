@@ -71,6 +71,10 @@ class StubApp extends RefCounted:
 	var bgm
 	var overlay = null
 	var applied := 0
+	var labs := 0
+
+	func open_lab() -> void:
+		labs += 1
 
 	func _init(store, parent: Node) -> void:
 		save = store
@@ -984,6 +988,12 @@ func test_play_screen_moves() -> String:
 			b.pressed.emit()
 	if err == "" and (pages != ["blackjack", "poker"] or not Main.PAGES.has_all(pages)):
 		err = "title must open blackjack and poker: " + str(pages)
+	# 設定の「対戦の接続テスト」の「開く」は、実験の画面を開く(Phase 6 だけの入口)
+	for b in settings.rows.find_children("*", "Button", true, false):
+		if b.text == S.BTN_OPEN:
+			b.pressed.emit()
+	if err == "" and app.labs != 1:
+		err = "settings must open the connection test"
 	settings._store("fx", "lite")
 	if err == "" and (app.save.data["settings"]["fx"] != "lite" or app.applied != 1):
 		err = "settings must save and apply at once"

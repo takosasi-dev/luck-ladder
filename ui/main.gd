@@ -265,6 +265,11 @@ func show_lab(query: String) -> void:
 	_swap(lab)
 
 
+# 設定の「対戦の接続テスト」から開く(招待を作る側として)。
+func open_lab() -> void:
+	show_lab("?lab=1")
+
+
 func _open_page(page: String) -> void:
 	if page == "settings":
 		open_settings()

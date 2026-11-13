@@ -80,6 +80,9 @@ const TUTORIAL_QUEUED := "次のランで出ます"
 const SAVE_UNAVAILABLE := "このブラウザでは記録が残りません"
 const SET_DATA := "保存データ"
 const BTN_DATA := "書き出し・読み込み"
+# 接続の実験の画面への入口(Phase 6 だけ。Phase 7 で消す)
+const SET_LAB := "対戦の接続テスト"
+const BTN_OPEN := "開く"
 
 # 保存データ(FR-25・FR-26)
 const EXPORT_HEAD := "書き出し"

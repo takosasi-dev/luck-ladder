@@ -86,6 +86,10 @@ func _rebuild() -> void:
 	data.custom_minimum_size.x = 260
 	data.pressed.connect(func(): app.open_data())
 	_row(S.SET_DATA, [data])
+	# 接続の実験の画面への入口(Phase 6 だけの仮の物。Phase 7 で消す)
+	var lab := Kit.button(S.BTN_OPEN, T.FS_BODY, "ghost")
+	lab.pressed.connect(func(): app.open_lab())
+	_row(S.SET_LAB, [lab])
 
 
 func _choice(title: String, options: Array, key: String) -> void:
