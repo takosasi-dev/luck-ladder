@@ -86,6 +86,10 @@ var rival_box: Control
 var rivals := {}
 var count_label: Label
 var wait_label: Label
+# 対戦の途中の自分の順位(「いま 2 位」)
+var rank_label: Label
+# 「同じ」の当たりで、前の札を一瞬重ねて見せるために覚えておく
+var prev_card := -1
 var vs_start_ms := 0
 # 秒読みの間と、自分の final を送った後は、手を受けない
 var vs_locked := false
@@ -365,14 +369,14 @@ func _act(side: String, show_press: bool) -> void:
 	else:
 		stats.on_guess(res, st)
 	if st.ended == "":
-		# 対戦は途中の保存をしない(D-29)
-		if mode != "versus":
-			save.save_current(mode, st.seed_text, date, st.actions, stats.counter_shown)
 		# FR-17: 条件を満たした手の直後に達成にして、通知を出す
 		var fresh: Array = save.judge_move(stats, date)
 		run_ach.append_array(fresh)
 		for id in fresh:
 			toast.push(S.ACHIEVEMENTS[id][0])
+		# 対戦は途中の保存をしない(D-29)。この手で取った実績も入れるので、判定の後に書く
+		if mode != "versus":
+			save.save_current(mode, st.seed_text, date, st.actions, stats.counter_shown, run_ach)
 	elif mode != "versus":
 		_finish_run()
 	if mode == "versus":
@@ -400,6 +404,8 @@ func _finish_run() -> void:
 
 func _animate_flip(res: Dictionary) -> void:
 	busy = true
+	prev_card = card.card
+	_hide_ghost()
 	app.sfx.play("flip")
 	deck.set_left(st.remaining())
 	deck_label.text = S.DECK_LEFT % st.remaining()
@@ -425,6 +431,11 @@ func _animate_flip(res: Dictionary) -> void:
 		flip_tw.tween_callback(card.show_card.bind(res["card"], true))
 		flip_tw.tween_property(card, "scale:x", 1.0, T.t(T.FLIP) / 2).set_ease(Tween.EASE_OUT)
 	flip_tw.tween_callback(_on_flip_done.bind(res))
+
+
+func _hide_ghost() -> void:
+	incoming.visible = false
+	incoming.modulate.a = 1.0
 
 
 func _skip_flip() -> void:
@@ -478,6 +489,14 @@ func _on_flip_done(res: Dictionary) -> void:
 			card.shine(tw, T.t(T.SHINE))
 			fx.burst(card_c, T.SPARKS_HIT, T.t(T.SHINE))
 			fx.callout(S.CALL_SAME if same else S.CALL_LONGSHOT, T.BRASS_HI, callout_at)
+		if same and prev_card >= 0 and not T.lite:
+			# §9.12: 前の札と今の札が一瞬重なって見える(前の札を左上にずらして重ね、0.6 秒で消す)
+			incoming.show_card(prev_card, true)
+			Kit.place(incoming, Rect2(r["card"].position + Vector2(-28, -16), r["card"].size))
+			incoming.modulate.a = 0.9
+			incoming.visible = true
+			tw.parallel().tween_property(incoming, "modulate:a", 0.0, T.t(0.6))
+			tw.parallel().tween_callback(_hide_ghost).set_delay(T.t(0.6))
 		app.sfx.play("same" if same else "hit_1" if st.streak <= 3 else "hit_2" if st.streak <= 7 else "hit_3")
 		if res["life_up"]:
 			pips.set_lives(st.lives, tw)
@@ -606,7 +625,12 @@ func _build_versus() -> void:
 			rival_box.add_child(chip)
 			rivals[id] = chip
 	vs.rivals_changed.connect(_refresh_rivals)
+	rank_label = Kit.label("", T.FS_SMALL, T.W_NUM, T.BRASS_HI)
+	rank_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(rank_label)
 	count_label = Kit.num_label("", T.FS_TITLE, T.BRASS_HI)
+	# 札の上に重なっても読めるように、暗い下地を敷く
+	count_label.add_theme_stylebox_override("normal", Kit.box(Color(T.BG_DEEP, 0.88), 28, Color(T.BRASS, 0.5), 1))
 	count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(count_label)
 	wait_label = Kit.label("", T.FS_BODY, T.W_NUM, T.BRASS_HI)
@@ -630,7 +654,9 @@ func _layout_versus(r: Dictionary) -> void:
 	for id in rivals:
 		Kit.place(rivals[id], Rect2(i * (w + 8), 0, w, strip.size.y))
 		i += 1
-	Kit.place(count_label, Rect2(0, size.y * 0.3, size.x, 140))
+	Kit.place(rank_label, r["rank_now"])
+	Kit.place(count_label, Rect2(size.x / 2 - 110, size.y * 0.3 - 10, 220, 160))
+	count_label.pivot_offset = count_label.size / 2
 	Kit.place(wait_label, r["pot"])
 
 
@@ -645,6 +671,7 @@ func _refresh_rivals() -> void:
 func _process(_delta: float) -> void:
 	if mode != "versus" or done:
 		return
+	rank_label.text = S.VS_RANK_NOW % vs.vs.live_rank(vs.vs.my_id)
 	if vs_locked:
 		var left := vs_start_ms - Time.get_ticks_msec()
 		if left > 0:
@@ -653,6 +680,10 @@ func _process(_delta: float) -> void:
 				vs_count = n
 				count_label.text = str(n)
 				app.sfx.play("tap")
+				if not T.lite:
+					# 数字が変わるたびに、小さく弾ませる
+					count_label.scale = Vector2(1.3, 1.3)
+					create_tween().tween_property(count_label, "scale", Vector2.ONE, 0.25).set_ease(Tween.EASE_OUT)
 			return
 		vs_locked = false
 		count_label.visible = false

@@ -258,6 +258,7 @@ func show_title() -> void:
 		"ach_done": save.data["achievements"].size(),
 		"ach_total": Ach.DEFS.size(),
 		"title_rank": Progress.title_rank(save.data["totals"]["total_score"]),
+		"title_next": Progress.to_next_title(save.data["totals"]["total_score"]),
 	})
 	notice = ""
 	title.run_pressed.connect(start_new_run)
@@ -382,12 +383,14 @@ func _continue(mode: String) -> void:
 		notice = S.RESTORE_FAILED
 		show_title()
 		return
-	_play(r["state"], r["stats"], mode, rec["date"])
+	_play(r["state"], r["stats"], mode, rec["date"], rec["run_ach"])
 
 
-func _play(st, stats, mode: String, date: String) -> void:
+func _play(st, stats, mode: String, date: String, run_ach: Array = []) -> void:
 	var p := Play.new()
 	p.setup(self, st, stats, mode, date, not bool(save.data["tutorial_done"]))
+	# 中断の前に取った実績も、結果の画面に出す
+	p.run_ach = run_ach.duplicate()
 	var best_before: int = save.data["totals"]["best_score"]
 	p.finished.connect(func(info: Dictionary): _show_result(info, best_before))
 	p.to_title.connect(show_title)

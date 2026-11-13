@@ -13,11 +13,19 @@ const T := preload("res://ui/theme/tokens.gd")
 const Kit := preload("res://ui/kit.gd")
 const ShareText := preload("res://core/share_text.gd")
 
+const Card := preload("res://ui/parts/card.gd")
+
 const RUNGS := 7
 const RUNG_CYCLE := 3.2
+# FR-31: 背景を流れる札。[始まりの位置(流れる幅に対する割合), 高さ(画面に対する割合), 速さ(px/秒), 傾き(ラジアン)]
+const DRIFT := [[0.02, 0.10, 14.0, -0.20], [0.20, 0.64, 10.0, 0.14], [0.36, 0.32, 17.0, 0.08], [0.52, 0.80, 12.0, -0.10],
+	[0.68, 0.14, 9.0, 0.22], [0.82, 0.52, 15.0, -0.16], [0.94, 0.88, 11.0, 0.05]]
+const DRIFT_SIZE := Vector2(150, 210)
+const DRIFT_ALPHA := 0.13
 
-# {has_continue, notice, daily_no, daily_first(初回の得点。無ければ -1), daily_ongoing, ach_done, ach_total, title_rank}
+# {has_continue, notice, daily_no, daily_first(初回の得点。無ければ -1), daily_ongoing, ach_done, ach_total, title_rank, title_next(次の称号までの点。無ければ -1)}
 var info := {}
+var drift: Control
 var logo: Label
 var rungs: Control
 var sub: Label
@@ -42,6 +50,20 @@ func setup(title_info: Dictionary) -> void:
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 選んだ裏面の札が、薄く、ゆっくり流れる(控えめでは出さない)。ほかの部品より先に足して、いちばん後ろに描く
+	drift = Control.new()
+	drift.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(drift)
+	if not T.lite:
+		for d in DRIFT:
+			var c := Card.new()
+			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			c.size = DRIFT_SIZE
+			c.pivot_offset = DRIFT_SIZE / 2
+			c.rotation = d[3]
+			c.modulate.a = DRIFT_ALPHA
+			drift.add_child(c)
+			c.show_card(-1, false)
 	logo = Kit.label(S.TITLE, T.FS_TITLE, T.W_BLACK, T.BRASS_HI)
 	logo.add_theme_font_override("font", Kit.num_italic())
 	logo.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
@@ -79,7 +101,11 @@ func _ready() -> void:
 	var ach := S.BTN_ACH + "  " + S.ACH_COUNT % [info.get("ach_done", 0), info.get("ach_total", 0)]
 	_pair([[ach, "achievements"], [S.BTN_COLLECTION, "collection"]])
 	_pair([[S.BTN_RECORDS, "records"], [S.BTN_SETTINGS, "settings"]])
-	rank_label = Kit.label(S.TITLES[clampi(info.get("title_rank", 1), 1, S.TITLES.size()) - 1], T.FS_SMALL, T.W_BODY, T.BRASS_HI)
+	# 「見習い」だけでは何の表示か分からないので、見出しと、次の称号までの点を添える
+	var rank_text: String = S.TITLE_RANK % S.TITLES[clampi(info.get("title_rank", 1), 1, S.TITLES.size()) - 1]
+	if info.get("title_next", -1) >= 0:
+		rank_text += "   " + S.TITLE_NEXT % ShareText.group(info["title_next"])
+	rank_label = Kit.label(rank_text, T.FS_SMALL, T.W_BODY, T.BRASS_HI)
 	rank_label.add_theme_stylebox_override("normal", Kit.box(Color(0, 0, 0, 0), 18, Color(T.BRASS, 0.5), 1))
 	add_child(rank_label)
 	version_label = Kit.num_label(S.VERSION_PREFIX + str(ProjectSettings.get_setting("application/config/version")), T.FS_SMALL, T.TEXT_DIM, T.W_BODY)
@@ -108,6 +134,12 @@ func _pair(items: Array, kind: String = "ghost") -> void:
 
 func _process(_delta: float) -> void:
 	rungs.queue_redraw()
+	# 位置は時刻から決める(積み上げないので、止まっていた後も飛ばない)。右へ抜けたら左から入り直す
+	var t := Time.get_ticks_msec() / 1000.0
+	var span := size.x + DRIFT_SIZE.x * 2.4
+	for i in drift.get_child_count():
+		var d: Array = DRIFT[i]
+		drift.get_child(i).position = Vector2(fposmod(d[0] * span + t * d[2], span) - DRIFT_SIZE.x * 1.2, size.y * d[1] - DRIFT_SIZE.y / 2)
 
 
 # 題名の下に梯子の段を 7 本並べ、左から右へ灯りが流れる(控えめでは流さない)。
@@ -199,7 +231,7 @@ func relayout(is_landscape: bool, view_rect: Rect2) -> void:
 	Kit.place(notice_label, Rect2(0, top + 190, size.x, 34))
 	var menu_top := top + 228.0 if landscape else top + 300.0
 	Kit.place(menu, Rect2((size.x - menu_w) / 2, menu_top, menu_w, 0))
-	Kit.place(rank_label, Rect2((size.x - 260) / 2, size.y - 52, 260, 40))
+	Kit.place(rank_label, Rect2((size.x - 500) / 2, size.y - 52, 500, 40))
 	Kit.place(version_label, Rect2(size.x - 220, size.y - 50, 200, 36))
 	if confirm_layer != null:
 		_open_confirm(confirm_args[0], confirm_args[1], confirm_args[2])

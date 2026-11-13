@@ -12,7 +12,7 @@ const VERSION := 1
 const EXPORT_PREFIX := "LL1."
 const TOTAL_KEYS := ["runs", "clears", "total_score", "best_score", "best_streak", "hits", "misses", "same_hits", "banks", "longshot_hits"]
 const MODES := ["run", "daily", "versus"]
-const RUN_KEYS := ["mode", "seed_text", "date", "actions", "counter_shown"]
+const RUN_KEYS := ["mode", "seed_text", "date", "actions", "counter_shown", "run_ach"]
 const SEED_TEXT_MAX := 64
 # 追補 1 §8: [項目, 上限, 既定値]。下限はどれも 0
 const CASINO_KEYS := [
@@ -101,7 +101,8 @@ static func is_valid_actions(v) -> bool:
 	return true
 
 
-# 途中のラン(current_run / current_daily)。キーは RUN_KEYS の 5 つだけにする(INV-4・AC-20)。
+# 途中のラン(current_run / current_daily)。キーは RUN_KEYS の 6 つだけにする(INV-4・AC-20)。
+# run_ach はこのランで取った実績の ID(「つづきから」の後も結果に出すため)。無い・読めない物は空にする。
 static func sanitize_run(v, mode: String):
 	if not v is Dictionary:
 		return null
@@ -115,7 +116,12 @@ static func sanitize_run(v, mode: String):
 		return null
 	if not is_valid_actions(v.get("actions")) or not v.get("counter_shown") is bool:
 		return null
-	return {"mode": mode, "seed_text": seed_value, "date": date, "actions": v["actions"], "counter_shown": v["counter_shown"]}
+	var run_ach := []
+	var got = v.get("run_ach")
+	for id in got if got is Array else []:
+		if id is String and id in Ach.DEFS and not id in run_ach:
+			run_ach.append(id)
+	return {"mode": mode, "seed_text": seed_value, "date": date, "actions": v["actions"], "counter_shown": v["counter_shown"], "run_ach": run_ach}
 
 
 static func _top_entry(v):

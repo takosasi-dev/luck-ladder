@@ -576,6 +576,8 @@ func test_titles_and_unlocks() -> String:
 			return "title_rank(%d) = %d" % [t[0], Progress.title_rank(t[0])]
 	if S.TITLES.size() != 10:
 		return "10 titles"
+	if Progress.to_next_title(0) != 5000 or Progress.to_next_title(4999) != 1 or Progress.to_next_title(5000) != 15000 or Progress.to_next_title(2000000) != -1:
+		return "points to the next title"
 	var many := {}
 	for i in range(1, 24):
 		many["A-%02d" % i] = "2026-11-11"
@@ -779,23 +781,52 @@ func test_export_import() -> String:
 	return ""
 
 
-# AC-20: 途中のランの保存は 5 つのキーだけで、めくっていない札の番号を持たない。
+# AC-20: 途中のランの保存は 6 つのキーだけで、めくっていない札の番号を持たない。
 func test_current_run_keys() -> String:
 	var store = _fresh_store()
 	var st = RunState.new("LL1:test:1")
 	st.guess("L")
 	st.guess("L")
-	store.save_current("run", st.seed_text, "2026-11-11", st.actions, true)
+	store.save_current("run", st.seed_text, "2026-11-11", st.actions, true, ["A-01"])
 	var raw = JSON.parse_string(FileAccess.get_file_as_string(TEST_SAVE))
 	var keys: Array = raw["current_run"].keys()
 	keys.sort()
-	var want := Codec.RUN_KEYS.duplicate()
-	want.sort()
-	if keys != want:
+	var want := ["actions", "counter_shown", "date", "mode", "run_ach", "seed_text"]
+	if keys != want or Codec.RUN_KEYS.size() != 6:
 		return "current_run keys " + str(keys)
+	# run_ach: 読み戻せる。知らない ID・重なり・型の違う物は落とす。項目の無い古い保存は空になる
+	if SaveStore.new(TEST_SAVE).current("run")["run_ach"] != ["A-01"]:
+		return "run_ach must survive a reload"
+	var rec: Dictionary = raw["current_run"]
+	rec["run_ach"] = ["A-01", "A-01", "Z-99", 7]
+	if Codec.sanitize_run(rec, "run")["run_ach"] != ["A-01"]:
+		return "run_ach must drop junk"
+	rec.erase("run_ach")
+	if Codec.sanitize_run(rec, "run") == null or Codec.sanitize_run(rec, "run")["run_ach"] != []:
+		return "a save without run_ach must load with an empty list"
 	var restored := RunState.replay(raw["current_run"]["seed_text"], raw["current_run"]["actions"])
 	if not restored["ok"] or restored["state"].pos != st.pos or restored["state"].pot != st.pot:
 		return "restore from save"
+	return ""
+
+
+# 手の途中で取った実績は、その手の保存に入る(「つづきから」の後も結果に出すため)。
+func test_run_ach_saved_with_the_move() -> String:
+	Tokens.apply_settings({})
+	var app := StubApp.new(_fresh_store(), root)
+	var play = PlayScreen.new()
+	play.setup(app, RunState.new("x", _ordered_deck()), RunStats.new("run", false), "run", "2026-11-11", false)
+	root.add_child(play)
+	play.relayout(true, Rect2(0, 0, 1280, 720))
+	for i in 3:
+		play.last_input_frame = -1
+		play._act("H", true)
+		play._skip_flip()
+	var rec = app.save.current("run")
+	var streak: int = play.stats.best_streak
+	play.free()
+	if streak != 3 or rec == null or rec["run_ach"] != ["A-03"]:
+		return "streak %d, saved %s" % [streak, str(rec)]
 	return ""
 
 
@@ -1890,6 +1921,9 @@ func test_versus_state() -> String:
 		return "a rival must not change my row, and a row after the final must be ignored"
 	if vs.all_done():
 		return "two players are still playing"
+	# 途中の順位: 5000・5000・3000・0 → 1・1・3・4
+	if vs.live_rank(0) != 1 or vs.live_rank(1) != 1 or vs.live_rank(2) != 3 or vs.live_rank(3) != 4 or vs.live_rank(9) != 0:
+		return "live ranks must follow the banked scores"
 	vs.drop(3)
 	var res: Array = vs.results()
 	if VersusState.ranks(res) != [1, 1, 3, 4]:
@@ -2044,7 +2078,7 @@ func test_room_screen() -> String:
 	var guest_room = RoomScreen.new()
 	var err := ""
 	var texts := func(room) -> Array:
-		return room.box.find_children("*", "Label", true, false).map(func(l): return l.text) + room.box.find_children("*", "Button", true, false).map(func(b): return b.text)
+		return room.frame.find_children("*", "Label", true, false).map(func(l): return l.text) + room.frame.find_children("*", "Button", true, false).map(func(b): return b.text)
 	var tick := func():
 		for i in 4:
 			for app in [ha, ga]:
@@ -2059,7 +2093,7 @@ func test_room_screen() -> String:
 	tick.call()
 	if err == "" and (host_room.mode != "host" or ha.session == null or not ha.session.is_host or texts.call(host_room).count(S.ROOM_INVITE_MAKE) != 3):
 		err = "a host room must show three empty seats"
-	var start_button := func(): return host_room.box.find_children("*", "Button", true, false).filter(func(b): return b.text == S.ROOM_START)[0]
+	var start_button := func(): return host_room.frame.find_children("*", "Button", true, false).filter(func(b): return b.text == S.ROOM_START)[0]
 	if err == "" and not start_button.call().disabled:
 		err = "start must be disabled until a guest is connected"
 	ha.session.open_seat(1)

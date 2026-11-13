@@ -225,6 +225,7 @@ const VS_CLEARED := "完走"
 const VS_GONE := "切断"
 const VS_RESULT := "対戦の結果"
 const VS_RANK := "%d 位"
+const VS_RANK_NOW := "いま %d 位"
 const VS_ROW := "%d 位  %s"
 const VS_ROW_DETAIL := "%d枚  最大 %d 連続"
 const VS_REMATCH := "もう一戦"
@@ -304,6 +305,9 @@ const HIDDEN_TEXT := "???"
 
 # 称号(§9.8)。段 1〜10 の順
 const TITLES := ["見習い", "札読み", "梯子のぼり", "勝負師", "目利き", "ラウンジの常連", "山札の主", "梯子の達人", "夜の支配人", "伝説"]
+# タイトル画面の称号の行
+const TITLE_RANK := "称号: %s"
+const TITLE_NEXT := "次まで %s 点"
 
 # 札の裏面とテーブル(§9.8)
 const CARD_BACKS := {

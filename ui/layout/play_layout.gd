@@ -59,11 +59,13 @@ const PORTRAIT_OVER := {
 const VERSUS_LANDSCAPE := {
 	"rivals": Rect2(176, 60, 752, 44),
 	"timer": Rect2(540, 4, 330, 56),
+	"rank_now": Rect2(872, 4, 184, 56),
 }
 const VERSUS_LANDSCAPE_OVER := {"callout": Rect2(176, 108, 752, 70)}
 const VERSUS_PORTRAIT := {
 	"rivals": Rect2(14, 98, 552, 62),
-	"timer": Rect2(576, 98, 130, 62),
+	"timer": Rect2(576, 92, 130, 40),
+	"rank_now": Rect2(576, 132, 130, 30),
 	"ladder": Rect2(14, 164, 692, 76),
 	"deck": Rect2(128, 284, 176, 246),
 	"deck_label": Rect2(128, 534, 176, 34),

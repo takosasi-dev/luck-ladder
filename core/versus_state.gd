@@ -77,6 +77,17 @@ func drop(id: int) -> void:
 		players[id]["gone"] = true
 
 
+# 対戦の途中の順位(確保した得点で比べる。同点は同じ順位)。知らない id は 0。
+func live_rank(id: int) -> int:
+	if not players.has(id):
+		return 0
+	var rank := 1
+	for p in players.values():
+		if p["score"] > players[id]["score"]:
+			rank += 1
+	return rank
+
+
 # 全員が、終えた(final)か切れたか。
 func all_done() -> bool:
 	for p in players.values():

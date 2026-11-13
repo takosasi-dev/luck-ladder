@@ -23,6 +23,12 @@ static func title_rank(total_score: int) -> int:
 	return rank
 
 
+# 次の称号までの残りの点。いちばん上の称号なら -1。
+static func to_next_title(total_score: int) -> int:
+	var rank := title_rank(total_score)
+	return -1 if rank >= TITLE_STEPS.size() else TITLE_STEPS[rank] - total_score
+
+
 static func _met(cond: Array, achieved: Dictionary, total_score: int) -> bool:
 	match cond[0]:
 		"start":

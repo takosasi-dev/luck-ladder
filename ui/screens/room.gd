@@ -34,8 +34,15 @@ var relayed := false
 # ゲストが参加に失敗したときに戻る画面
 var guest_from := "paste"
 
+var frame: VBoxContainer
 var scroll: ScrollContainer
 var box: VBoxContainer
+# 下に固定する段: 知らせといちばん大事なボタン(スクロールしても動かない)
+var foot: VBoxContainer
+# 知らせの欄。高さを決めておき、知らせが出ても消えても、ほかの物の位置を変えない
+var note: Label
+# 「招待を作る」を押した席。招待ができたら、そのボタンの行まで画面を送る
+var reveal_seat := -1
 var seat_labels := {}
 var answer_label: Label
 var paste_box: TextEdit
@@ -52,13 +59,21 @@ func setup(app_ref, mode_value: String, url_query: String = "") -> void:
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame = VBoxContainer.new()
+	frame.add_theme_constant_override("separation", 10)
+	add_child(frame)
 	scroll = ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	add_child(scroll)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	frame.add_child(scroll)
 	box = VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 10)
 	scroll.add_child(box)
+	foot = VBoxContainer.new()
+	foot.add_theme_constant_override("separation", 6)
+	frame.add_child(foot)
+	note = _text("", T.FS_SMALL, T.TEXT, foot)
 	bridge.clipboard_read.connect(_on_clipboard)
 	bridge.answer_received.connect(_on_answer_text)
 	bridge.answer_taken.connect(_on_relay_taken)
@@ -77,15 +92,21 @@ func _ready() -> void:
 func relayout(landscape: bool, _view: Rect2) -> void:
 	size = Vector2(1280, 720) if landscape else Vector2(720, 1280)
 	var w := minf(size.x - 28, 900)
-	Kit.place(scroll, Rect2((size.x - w) / 2, 10, w, size.y - 20))
+	# 端の位置で置く: 大きさで置くと、折り返しが決まる前の背の高さのまま固まり、下の段が画面の外に出る
+	frame.offset_left = (size.x - w) / 2
+	frame.offset_right = frame.offset_left + w
+	frame.offset_top = 10
+	frame.offset_bottom = size.y - 10
+	# 知らせの欄: 横長は 1 行、縦長は折り返すので 2 行ぶん
+	note.custom_minimum_size.y = 33 if landscape else 69
 
 
 # ---- 部品 ----
 
-func _text(text: String, font_size: int = T.FS_BODY, color: Color = T.TEXT) -> Label:
+func _text(text: String, font_size: int = T.FS_BODY, color: Color = T.TEXT, parent: Node = null) -> Label:
 	var l := Kit.label(text, font_size, T.W_BODY, color)
 	l.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-	box.add_child(l)
+	(parent if parent != null else box).add_child(l)
 	return l
 
 
@@ -98,10 +119,10 @@ func _button(text: String, kind: String, cb: Callable, parent: Node = null) -> B
 	return b
 
 
-func _row() -> HBoxContainer:
+func _row(parent: Node = null) -> HBoxContainer:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
-	box.add_child(h)
+	(parent if parent != null else box).add_child(h)
 	return h
 
 
@@ -125,15 +146,20 @@ func _url(key: String, code: String) -> String:
 # ---- 組み立て(状態が変わるたびに作り直す) ----
 
 func _rebuild() -> void:
-	for c in box.get_children():
-		box.remove_child(c)
-		c.queue_free()
+	for c in box.get_children() + foot.get_children():
+		if c != note:
+			c.get_parent().remove_child(c)
+			c.queue_free()
+	note.text = ""
 	seat_labels = {}
 	answer_label = null
 	paste_box = null
 	box.add_child(Kit.label(S.ROOM_TITLE, T.FS_HEAD, T.W_NUM))
-	if message != "":
-		_text(message, T.FS_BODY, T.BAD if message_bad else T.BRASS_HI)
+	var said := T.BAD if message_bad else T.BRASS_HI
+	if mode == "relay":
+		if message != "":
+			_text(message, T.FS_BODY, said)
+		return
 	match mode:
 		"choose":
 			_text(S.ROOM_CHOOSE, T.FS_SMALL, T.TEXT_DIM)
@@ -152,10 +178,17 @@ func _rebuild() -> void:
 			_name_row()
 		"guest":
 			_build_guest()
-	if mode != "relay":
-		_text(S.ROOM_IP_NOTE, T.FS_SMALL, T.TEXT_DIM)
-		var leave: String = S.ROOM_SURE if sure_leave else S.ROOM_CLOSE if mode == "host" else S.ROOM_LEAVE if mode == "guest" else S.BTN_TO_TITLE
-		_button(leave, "ghost", _leave)
+	_text(S.ROOM_IP_NOTE, T.FS_SMALL, T.TEXT_DIM)
+	# 知らせは下の段の決まった欄に出す(上に差し込むと、押そうとしたボタンが動く)
+	note.text = message
+	note.add_theme_color_override("font_color", said)
+	var h := _row(foot)
+	if mode == "host":
+		var start := _button(S.ROOM_START, "brass", _start, h)
+		start.size_flags_stretch_ratio = 2.0
+		start.disabled = app.session.connected_links().is_empty()
+	var leave: String = S.ROOM_SURE if sure_leave else S.ROOM_CLOSE if mode == "host" else S.ROOM_LEAVE if mode == "guest" else S.BTN_TO_TITLE
+	_button(leave, "ghost", _leave, h)
 
 
 func _go(next: String) -> void:
@@ -212,28 +245,50 @@ func _build_host() -> void:
 	_text(S.ROOM_SEAT_SELF % se.my_name)
 	for link in se.seats:
 		var seat: Dictionary = se.seats[link]
+		var state: String = seat["state"]
+		if state in ["empty", "failed", "expired"]:
+			# 席の名前とボタンを 1 行に(縦に長くなって「はじめる」が遠くなるのを防ぐ)
+			var h := _row()
+			var l := Kit.label("", T.FS_BODY, T.W_BODY)
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			h.add_child(l)
+			seat_labels[link] = l
+			var b := _button(S.ROOM_INVITE_MAKE if state == "empty" else S.ROOM_REMAKE, "green", _open_seat.bind(link), h)
+			b.size_flags_horizontal = Control.SIZE_SHRINK_END
+			b.custom_minimum_size = Vector2(260, 88)
+			if state != "empty" and (seat["fails"] >= 3 or seat["reason"] == "no_route"):
+				_text(S.NET_NO_ROUTE, T.FS_SMALL, T.BAD)
+			elif state != "empty" and seat["reason"] == "no_rtc":
+				_text(S.NET_NO_RTC, T.FS_SMALL, T.BAD)
+			continue
 		seat_labels[link] = _text("")
-		match seat["state"]:
-			"empty":
-				_button(S.ROOM_INVITE_MAKE, "green", se.open_seat.bind(link))
-			"inviting":
-				var url := _url("j", seat["code"])
-				_url_box(url)
-				var h := _row()
-				_button(S.ROOM_INVITE_COPY, "brass", _copy.bind(url), h)
-				if bridge.can_share():
-					_button(S.ROOM_SHARE, "green", bridge.share_url.bind(url), h)
-				_button(S.ROOM_ANSWER_PASTE, "green", bridge.read_clipboard, h)
-			"failed", "expired":
-				if seat["fails"] >= 3 or seat["reason"] == "no_route":
-					_text(S.NET_NO_ROUTE, T.FS_SMALL, T.BAD)
-				elif seat["reason"] == "no_rtc":
-					_text(S.NET_NO_RTC, T.FS_SMALL, T.BAD)
-				_button(S.ROOM_REMAKE, "green", se.open_seat.bind(link))
+		if state == "inviting":
+			var url := _url("j", seat["code"])
+			_url_box(url)
+			var h := _row()
+			_button(S.ROOM_INVITE_COPY, "brass", _copy.bind(url), h)
+			if bridge.can_share():
+				_button(S.ROOM_SHARE, "green", bridge.share_url.bind(url), h)
+			_button(S.ROOM_ANSWER_PASTE, "green", bridge.read_clipboard, h)
+			if link == reveal_seat:
+				reveal_seat = -1
+				_reveal(h)
 	_paste_fallback()
-	var start := _button(S.ROOM_START, "brass", _start)
-	start.disabled = se.connected_links().is_empty()
 	_refresh_seats()
+
+
+func _open_seat(link: int) -> void:
+	reveal_seat = link
+	app.session.open_seat(link)
+
+
+# 作ったばかりの招待のボタンが下の段の裏に隠れないように、見える所まで送る(並べ終わるのを待ってから)
+func _reveal(row: Control) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if is_instance_valid(row):
+		scroll.ensure_control_visible(row)
 
 
 func _refresh_seats() -> void:

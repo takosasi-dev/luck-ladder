@@ -66,10 +66,10 @@ func current(mode: String):
 
 
 # 1 手ごとの途中の保存(FR-16)。対戦は保存しない(D-29)。
-func save_current(mode: String, seed_text: String, date: String, actions: String, counter_shown: bool) -> void:
+func save_current(mode: String, seed_text: String, date: String, actions: String, counter_shown: bool, run_ach: Array = []) -> void:
 	if mode != "run" and mode != "daily":
 		return
-	var rec := {"mode": mode, "seed_text": seed_text, "date": date, "actions": actions, "counter_shown": counter_shown}
+	var rec := {"mode": mode, "seed_text": seed_text, "date": date, "actions": actions, "counter_shown": counter_shown, "run_ach": run_ach.duplicate()}
 	data["current_daily" if mode == "daily" else "current_run"] = rec
 	write()
 
