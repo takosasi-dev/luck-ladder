@@ -1764,6 +1764,10 @@ func test_net_lab_builds() -> String:
 	lab._take_text(Invite.encode(_invite_items(Invite.KIND_ANSWER, 1, false)), "box")
 	if err == "" and (lab.status.text != S.NET_UNREADABLE or lab.rtc != null):
 		err = "an answer without an invite must be refused"
+	# つながる前の「送る試験」は始まらず、つながっていないと出る
+	lab._start_ping()
+	if err == "" and (lab.status.text != S.LAB_NOT_CONNECTED or lab.ping_sent != -1):
+		err = "the ping test must not start before the connection is open"
 	bridge.read_clipboard()
 	if err == "" and lab.status.text != S.NET_PASTE_FAILED:
 		err = "a refused clipboard must show the fallback line"

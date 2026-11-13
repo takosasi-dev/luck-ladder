@@ -39,6 +39,8 @@ var ping_times := {}
 var ping_rtts: Array[int] = []
 var relay_until := 0
 var relayed := false
+# 今の接続で、データチャンネルが開いているか(送る試験を始めてよいか)
+var linked := false
 
 var scroll: ScrollContainer
 var box: VBoxContainer
@@ -189,12 +191,13 @@ func _new_rtc() -> void:
 	if rtc != null:
 		rtc.queue_free()
 	rtc = Rtc.new()
+	linked = false
 	rtc.with_mdns = with_mdns
 	rtc.with_v6 = with_v6
 	rtc.described.connect(_on_described)
 	rtc.opened.connect(_on_opened)
 	rtc.received.connect(_on_received)
-	rtc.closed.connect(func(): _fail(S.LAB_CLOSED, "closed"))
+	rtc.closed.connect(_on_closed)
 	add_child(rtc)
 
 
@@ -295,7 +298,13 @@ func _on_described(items: Dictionary) -> void:
 	_say(S.LAB_INVITE_READY if invite else S.LAB_ANSWER_READY)
 
 
+func _on_closed() -> void:
+	linked = false
+	_fail(S.LAB_CLOSED, "closed")
+
+
 func _on_opened() -> void:
+	linked = true
 	_note("channel=open")
 	rtc.send_text(JSON.stringify({"t": "hello", "v": 1}))
 
@@ -322,7 +331,12 @@ func _on_received(text: String) -> void:
 # ---- 送る試験 ----
 
 func _start_ping() -> void:
-	if rtc == null or ping_sent >= 0:
+	if ping_sent >= 0:
+		return
+	if not linked:
+		# つながる前に始めると、60 秒後に「全部届かなかった」としか出ず、つながっていないことが分からない
+		_note("ping=not_connected")
+		_say(S.LAB_NOT_CONNECTED, T.BAD)
 		return
 	ping_sent = 0
 	ping_times.clear()
@@ -355,7 +369,7 @@ func _process(_delta: float) -> void:
 		ping_rtts.sort()
 		var median: int = ping_rtts[ping_rtts.size() / 2] if not ping_rtts.is_empty() else -1
 		_note("ping sent=%d lost=%d rtt_median_ms=%d" % [PING_COUNT, PING_COUNT - ping_rtts.size(), median])
-		_say(S.LAB_PING_DONE % [PING_COUNT - ping_rtts.size(), median], T.GOOD)
+		_say(S.LAB_PING_DONE % [PING_COUNT - ping_rtts.size(), median], T.BAD if ping_rtts.is_empty() else T.GOOD)
 
 
 # ---- ?a= で開かれたタブ(D-28): 部屋のタブへ返事を渡す ----
