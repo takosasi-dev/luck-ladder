@@ -1774,6 +1774,9 @@ func test_net_lab_builds() -> String:
 	lab._on_received(JSON.stringify({"t": "hello"}))
 	if err == "" and (lab.verdict.text != S.LAB_VERDICT_OK or not lab.ping_button.visible or lab.copy_button.visible):
 		err = "a hello must show the connected view"
+	# つながっている間は、押すと接続が切れる「招待を作る」を出さない
+	if err == "" and lab.make_button.visible:
+		err = "the invite button must be hidden while connected"
 	lab._fail(S.LAB_TIMEOUT, "connect_timeout")
 	if err == "" and (lab.verdict.text != S.LAB_VERDICT_FAIL or lab.ping_button.visible or not lab.make_button.visible):
 		err = "a failure must show the failed view"

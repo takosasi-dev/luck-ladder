@@ -56,6 +56,7 @@ var share_button: Button
 var paste_button: Button
 var ping_button: Button
 var record_button: Button
+var retry_button: Button
 var detail: VBoxContainer
 var url_box: TextEdit
 var paste_box: TextEdit
@@ -101,6 +102,7 @@ func _ready() -> void:
 	paste_button = _button(S.LAB_PASTE, "ghost", bridge.read_clipboard)
 	ping_button = _button(S.LAB_PING, "green", _start_ping)
 	record_button = _button(S.LAB_COPY_RECORD, "green", _copy_record)
+	retry_button = _button(S.LAB_RETRY, "ghost", _make_invite)
 	_wrapped(S.LAB_NOTE, T.FS_SMALL, T.TEXT_DIM)
 	_button(S.LAB_DETAIL, "ghost", func(): detail.visible = not detail.visible)
 	detail = VBoxContainer.new()
@@ -157,7 +159,9 @@ func _button(text: String, kind: String, cb: Callable, parent: Node = null) -> B
 
 # 今の段で押す物だけを見せる。stage: "idle"(まだ何もしていない)/ "busy"(待つだけ)/ "share"(URL を送る)/ "connected" / "failed"
 func _stage(stage: String) -> void:
-	make_button.visible = stage in ["idle", "connected", "failed"]
+	# つながっている間は「招待を作る」を出さない(押すと今の接続が切れる)。やり直しは、断りを書いた別のボタンで、招待を出した側にだけ
+	make_button.visible = stage in ["idle", "failed"]
+	retry_button.visible = stage == "connected" and pending_kind == Codec.KIND_INVITE
 	url_box.visible = stage == "share"
 	copy_button.visible = stage == "share"
 	if share_button != null:
