@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-13
+
+対戦を切れにくくする直しと、説明書です。
+
+### Added
+
+- 対戦の結果の画面に、ホストだけ「部屋に戻る」を足した。部屋で、切れた人の席を作り直す・人を足す・制限時間を変える、ができる。ゲストは結果の画面で待ったまま、次が始まると自動で入る
+- 部屋にいる間と対戦中は、画面が自動で消えないようにした(対応しているブラウザだけ)
+- 説明書の PDF(`docs/LuckLadder-manual.pdf`)と、README のプレイの GIF
+
+### Changed
+
+- 招待と返事の期限を 2 分から 5 分に延ばした
+- 対戦中に相手を「切断」とみなすまでの時間を、10 秒から 30 秒に延ばした
+
+### Fixed
+
+- 部屋で待っている間に、ブラウザを 10 秒より長く隠すと(招待を送る・返事の URL を開く など)、先につながっていた人が切れていた。待っている間と結果の画面では、5 分まで待つようにした
+
 ## [0.4.0] - 2026-11-13
 
 画面の見やすさと使いやすさの直しです。
@@ -100,6 +119,7 @@
 - スマホの実機では、まだ確かめていません
 - 調整値は、人に遊んでもらって決めた値ではありません
 
+[0.5.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.5.0
 [0.4.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.4.0
 [0.3.1]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.3.1
 [0.3.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.3.0

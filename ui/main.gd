@@ -167,6 +167,9 @@ func _notification(what: int) -> void:
 		bgm.set_paused(true)
 	elif what == NOTIFICATION_WM_WINDOW_FOCUS_IN or what == NOTIFICATION_APPLICATION_FOCUS_IN:
 		bgm.set_paused(false)
+		# 画面を消さない鍵は、ブラウザを隠すと外れる。部屋にいる間は掛け直す
+		if session != null:
+			bridge.keep_awake(true)
 
 
 func _today() -> String:
@@ -284,6 +287,7 @@ func make_session(is_host: bool):
 	session = Session.new(RtcTransport.new(), is_host, str(save.data["settings"]["name"]))
 	session.started.connect(_on_versus_started)
 	session.ended.connect(_on_versus_ended)
+	bridge.keep_awake(true)
 	return session
 
 
@@ -291,6 +295,7 @@ func close_session() -> void:
 	if session != null:
 		session.leave()
 		session = null
+		bridge.keep_awake(false)
 
 
 func _process(_delta: float) -> void:
@@ -334,6 +339,9 @@ func _on_versus_ended(results: Array) -> void:
 	r.leave_pressed.connect(func():
 		close_session()
 		show_title())
+	r.room_pressed.connect(func():
+		if session.reopen():
+			show_room("host"))
 	_swap(r)
 
 

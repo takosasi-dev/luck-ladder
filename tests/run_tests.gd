@@ -2030,6 +2030,85 @@ func test_versus_session() -> String:
 	return ""
 
 
+# 部屋で待っている間と結果の画面では、黙っていても NET_SILENT_LOBBY_SEC まで切らない(ブラウザを隠して招待を送る人がいる)。
+# 結果の後、ホストは部屋に戻って、席を作り直せる。
+func test_versus_lobby_and_reopen() -> String:
+	var hub := {}
+	var host = Session.new(LoopTransport.new(hub), true, "HOST")
+	var a = Session.new(LoopTransport.new(hub), false, "AAA")
+	var b = Session.new(LoopTransport.new(hub), false, "BBB")
+	var clock := [1000]
+	var pump := func(who: Array, ms: int):
+		clock[0] += ms
+		for i in 4:
+			for s in who:
+				s.tick(clock[0])
+	var answers := {}
+	a.answer_ready.connect(func(code): answers["a"] = code)
+	b.answer_ready.connect(func(code): answers["b"] = code)
+	var err := ""
+	host.open_seat(1)
+	pump.call([host, a], 10)
+	a.join(host.seats[1]["code"])
+	pump.call([host, a], 10)
+	host.take_answer_text(answers.get("a", ""))
+	pump.call([host, a], 10)
+	if host.connected_links() != [1]:
+		err = "setup: " + str(host.seats)
+	# a のブラウザが隠れた(a の時計だけ止まる)。対戦中の上限を過ぎても、待ち合わせ中は切らない
+	pump.call([host], B.NET_SILENT_SEC * 1000 + 100)
+	if err == "" and host.connected_links() != [1]:
+		err = "a silent guest must stay in the lobby"
+	# 黙っていた相手を、始めた途端に切らない(始まりから数え直す)
+	host.start(120, 1700000000, 5)
+	pump.call([host], 10)
+	if err == "" and host.connected_links() != [1]:
+		err = "starting right after a long silence must not cut anyone"
+	pump.call([host, a], 10)
+	if err == "" and (a.host_gone or a.phase != "playing"):
+		err = "a guest coming back must still be in the match"
+	for s in [host, a]:
+		s.begin_play()
+	host.report(_vs_row(0, 100, true))
+	a.report(_vs_row(1, 200, true))
+	pump.call([host, a], 10)
+	if err == "" and (host.phase != "ended" or a.phase != "ended"):
+		err = "the first match must end"
+	# 結果の後: ゲストは部屋を開け直せない。ホストは、戻るまでは席を作れず、戻れば作れる
+	if err == "" and (a.reopen() or host.open_seat(2) or not host.reopen() or host.reopen() or not host.open_seat(2)):
+		err = "only the host can reopen the room, once, and then open seats"
+	pump.call([host, a, b], 10)
+	b.join(host.seats[2]["code"])
+	pump.call([host, a, b], 10)
+	host.take_answer_text(answers.get("b", ""))
+	pump.call([host, a, b], 10)
+	if err == "" and (host.connected_links() != [1, 2] or not b.joined):
+		err = "a new guest must be able to join after a match: " + str(host.seats)
+	# 結果の画面で待っていたゲストも、次の start で始まる。制限時間も変えられる
+	host.start(180, 1700000100, 6)
+	pump.call([host, a, b], 10)
+	if err == "" and (a.phase != "playing" or b.phase != "playing" or a.vs.players.size() != 3 or a.vs.match_sec != 180 or a.vs.round_no != 2):
+		err = "the next match must start for everyone"
+	for s in [host, a, b]:
+		s.begin_play()
+	for s in [host, a, b]:
+		var row := _vs_row(s.vs.my_id, 100, true)
+		row["round"] = 2
+		s.report(row)
+	pump.call([host, a, b], 10)
+	# 結果の画面でも、NET_SILENT_LOBBY_SEC を過ぎた相手は切る
+	pump.call([host], B.NET_SILENT_SEC * 1000 + 100)
+	if err == "" and (host.phase != "ended" or host.connected_links() != [1, 2]):
+		err = "silent guests must stay while the result is shown: %s %s" % [host.phase, str(host.connected_links())]
+	pump.call([host], B.NET_SILENT_LOBBY_SEC * 1000)
+	if err == "" and host.connected_links() != []:
+		err = "guests silent for NET_SILENT_LOBBY_SEC must be cut"
+	for s in [host, a, b]:
+		s.transport.peers.clear()
+	hub.clear()
+	return err
+
+
 # 期限: 招待は INVITE_TTL_SEC で切れ、返事を渡してから 20 秒つながらなければ失敗にする(FR-39・E-26)。
 func test_versus_seat_expiry() -> String:
 	var hub := {}
@@ -2254,6 +2333,8 @@ func test_versus_play() -> String:
 		vr.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 	if err == "" and (vr.my_rank < 1 or not vr.rematch.visible or vr.rematch.disabled or vr.wait_label.visible):
 		err = "the host must be offered a rematch"
+	if err == "" and vr.box.find_children("*", "Button", true, false).filter(func(b): return b.text == S.VS_TO_ROOM).size() != 1:
+		err = "the host must be offered the way back to the room"
 	vr._rematch()
 	tick.call()
 	if err == "" and (host.phase != "playing" or guest.phase != "playing" or host.round_no != 2):

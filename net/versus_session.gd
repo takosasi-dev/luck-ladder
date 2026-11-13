@@ -177,7 +177,20 @@ func _begin(seed_value: String, match_sec: int) -> void:
 	vs.begin(seed_value, match_sec, round_no)
 	phase = "playing"
 	started_ms = 0
+	# 待っている間に黙っていた相手を、始まった途端に切らない(ここから数え直す)
+	for link in links:
+		links[link]["last_rx"] = now
 	started.emit(seed_value, match_sec, round_no)
+
+
+# ホスト: 対戦の結果から部屋に戻る。席の作り直し・人を足す・制限時間の変更ができるようになる。
+# ゲストは結果の画面で待ったまま、次の start で始まる。
+func reopen() -> bool:
+	if not is_host or phase != "ended":
+		return false
+	phase = "lobby"
+	_send_lobby()
+	return true
 
 
 # ---- ゲスト: 参加 ----
@@ -241,8 +254,9 @@ func tick(now_ms: int) -> void:
 		_ping_n += 1
 		for link in links:
 			transport.send(link, Msg.ping(_ping_n))
+	var silent_ms: int = (B.NET_SILENT_SEC if phase == "playing" else B.NET_SILENT_LOBBY_SEC) * 1000
 	for link in links.keys():
-		if now - links[link]["last_rx"] > B.NET_SILENT_SEC * 1000:
+		if now - links[link]["last_rx"] > silent_ms:
 			_cut(link, "")
 	if is_host:
 		for link in seats:

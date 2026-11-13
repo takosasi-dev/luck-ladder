@@ -3,6 +3,8 @@
 extends Control
 
 signal leave_pressed
+# ホストだけ: 部屋に戻る(落ちた人の席を作り直す・人を足す・制限時間を変える)
+signal room_pressed
 
 const S := preload("res://core/strings.gd")
 const T := preload("res://ui/theme/tokens.gd")
@@ -61,6 +63,11 @@ func _ready() -> void:
 	rematch.custom_minimum_size = Vector2(0, 96)
 	rematch.pressed.connect(_rematch)
 	box.add_child(rematch)
+	if app.session.is_host:
+		var to_room := Kit.button(S.VS_TO_ROOM, T.FS_BODY, "green")
+		to_room.custom_minimum_size = Vector2(0, 96)
+		to_room.pressed.connect(func(): room_pressed.emit())
+		box.add_child(to_room)
 	wait_label = _text(S.VS_WAIT_REMATCH, T.FS_BODY, T.BRASS_HI)
 	var leave := Kit.button(S.ROOM_LEAVE, T.FS_BODY, "ghost")
 	leave.custom_minimum_size = Vector2(0, 96)

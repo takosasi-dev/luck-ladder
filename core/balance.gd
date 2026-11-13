@@ -18,12 +18,15 @@ const SHARE_URL := "https://takosasi-dev.github.io/luck-ladder/"
 const MATCH_SEC_CHOICES := [120, 180, 300, 0]
 const MATCH_SEC_DEFAULT := 180
 const VERSUS_MAX := 4
-const INVITE_TTL_SEC := 120
+const INVITE_TTL_SEC := 300
 const ICE_WAIT_SEC := 3
 const STUN_URLS := ["stun:stun.l.google.com:19302"]
 const NET_MSG_MAX := 1024
 const NET_RATE_MAX := 20
-const NET_SILENT_SEC := 10
+# 何も届かない相手を切るまでの秒数。対戦中と、それ以外(部屋で待っている間・結果の画面)。
+# 待っている間は、招待を送るためにブラウザを隠す人がいるので長くする(隠れたブラウザは何も送れない)
+const NET_SILENT_SEC := 30
+const NET_SILENT_LOBBY_SEC := 300
 
 # §9.5: 2026-01-01 の通し日数(この日が No.1)
 const DAY_NO_ORIGIN := 20454

@@ -12,6 +12,10 @@ const CHANNEL_NAME := "luck-ladder-answer"
 const TAKEN := "taken"
 
 var _channel
+# 画面を消さないための鍵(WakeLockSentinel)。持っていない間は null
+var _wake = null
+var _wake_wanted := false
+var _wake_cbs := []
 # JavaScript に渡したコールバックは、持っておかないと消える
 var _callbacks := []
 
@@ -84,6 +88,33 @@ func share_url(url: String) -> void:
 	data.url = url
 	var ng = _callback(func(_args: Array): pass)
 	_js("navigator").share(data).catch(ng)
+
+
+# 部屋と対戦の間、画面が自動で消えるのを止める(消えるとブラウザが止まり、相手から切断に見える)。
+# 対応していないブラウザでは何もしない。ブラウザを隠すと勝手に外れるので、戻ってきたらもう一度呼ぶ。
+func keep_awake(on: bool) -> void:
+	_wake_wanted = on
+	var held: bool = _wake != null and not _wake.released
+	if held == on:
+		return
+	if held:
+		_wake.release()
+		_wake = null
+		return
+	var n = _js("navigator")
+	if n == null or n.wakeLock == null:
+		return
+	if _wake_cbs.is_empty():
+		_wake_cbs = [_callback(_on_wake), _callback(func(_args: Array): pass)]
+	n.wakeLock.request("screen").then(_wake_cbs[0], _wake_cbs[1])
+
+
+func _on_wake(args: Array) -> void:
+	# 頼んでから届くまでの間に要らなくなっていたら、すぐ返す
+	if _wake_wanted:
+		_wake = args[0]
+	else:
+		args[0].release()
 
 
 func can_broadcast() -> bool:
