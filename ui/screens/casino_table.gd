@@ -31,6 +31,8 @@ var bet := 0
 var stake := 0
 var tw: Tween
 var last_input_frame := -1
+# 勝負が付いた直後は、この時刻(ms)まで「配る」を受けない(Kit.press_guard_ms)
+var quiet_until := 0
 
 var back: Button
 var name_label: Label
@@ -106,7 +108,8 @@ func _ready() -> void:
 	add_child(wallet_cap)
 	wallet_num = Kit.num_label("", T.FS_SCORE, T.BRASS_HI)
 	add_child(wallet_num)
-	delta_label = Kit.num_label("", T.FS_BODY, T.TEXT)
+	# 「戻り」の字を出すので、本文の字にする(数字用の字には漢字が無い)
+	delta_label = Kit.label("", T.FS_BODY - 2, T.W_NUM)
 	add_child(delta_label)
 	notice = Kit.label("", T.FS_SMALL, T.W_BODY, T.BRASS_HI)
 	add_child(notice)
@@ -158,9 +161,9 @@ func _show_wallet() -> void:
 	wallet_num.text = ShareText.group(save.data["casino"]["wallet"])
 
 
-# FR-A5: 増えた点・減った点
-func _show_delta(points: int) -> void:
-	delta_label.text = S.DELTA_PLUS % ShareText.group(points) if points > 0 else ShareText.group(points)
+# FR-A5: 増えた点・減った点。勝負が付いたときの戻りには「戻り」と付ける(100 点賭けて勝つと +200 と出て、初めての人には分かりにくい)
+func _show_delta(points: int, is_return: bool = false) -> void:
+	delta_label.text = (S.DELTA_RETURN if is_return else S.DELTA_PLUS) % ShareText.group(points) if points > 0 else ShareText.group(points)
 	delta_label.add_theme_color_override("font_color", T.GOOD if points > 0 else T.BAD)
 
 
@@ -231,7 +234,8 @@ func _new_deck() -> PackedInt32Array:
 
 # FR-A4: 賭ける点を引いて保存してから、札を配る。
 func _deal() -> void:
-	if phase != "bet" or not _accept() or not save.casino_pay(bet):
+	# 動きの間に連打していた人の次の 1 押しが、結果を読む前に次の勝負を始めないようにする
+	if phase != "bet" or Time.get_ticks_msec() < quiet_until or not _accept() or not save.casino_pay(bet):
 		return
 	phase = "play"
 	stake = bet
@@ -275,8 +279,9 @@ func _end(text: String, color: Color, sound: String, returned: int) -> void:
 	message.text = text
 	message.add_theme_color_override("font_color", color)
 	if returned > 0:
-		_show_delta(returned)
+		_show_delta(returned, true)
 	app.sfx.play(sound)
+	quiet_until = Time.get_ticks_msec() + Kit.press_guard_ms
 	_enter_bet()
 
 

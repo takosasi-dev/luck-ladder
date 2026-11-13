@@ -9,6 +9,9 @@ const FONT_NUM_ITALIC := "res://assets/fonts/PlayfairDisplay-Italic-Variable.ttf
 
 static var _fonts := {}
 static var _discs := {}
+# 押し間違いを受けない時間(ms)。画面が出た直後と、手が入った直後に使う(二度押しの 2 回目が、次の画面のボタンや次の手に入るのを防ぐ)。
+# テストは同じ瞬間に続けて押すので、0 にして使う
+static var press_guard_ms := 300
 
 
 static func _font(path: String, weight: int, numeric: bool) -> Font:

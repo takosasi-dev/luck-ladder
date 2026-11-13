@@ -17,6 +17,7 @@ const SaveStore := preload("res://save/save_store.gd")
 const Fx := preload("res://tests/fixtures.gd")
 const PlayLayout := preload("res://ui/layout/play_layout.gd")
 const Tokens := preload("res://ui/theme/tokens.gd")
+const Kit := preload("res://ui/kit.gd")
 const Sfx := preload("res://audio/sfx.gd")
 const Bgm := preload("res://audio/bgm.gd")
 const PlayScreen := preload("res://ui/screens/play.gd")
@@ -26,6 +27,7 @@ const TitleScreen := preload("res://ui/screens/title.gd")
 const AchievementsScreen := preload("res://ui/screens/achievements.gd")
 const RecordsScreen := preload("res://ui/screens/records.gd")
 const CollectionScreen := preload("res://ui/screens/collection.gd")
+const HowtoScreen := preload("res://ui/screens/howto.gd")
 const SaveDataScreen := preload("res://ui/screens/save_data.gd")
 const ToastPart := preload("res://ui/parts/toast.gd")
 const BJ := preload("res://core/bj_rules.gd")
@@ -192,6 +194,8 @@ func _process(_delta: float) -> bool:
 
 
 func _run_all() -> void:
+	# テストは同じ瞬間に続けて押すので、押し間違いの受け止めは切っておく(test_press_guard だけが入れる)
+	Kit.press_guard_ms = 0
 	var failed := 0
 	var total := 0
 	for m in get_method_list():
@@ -810,6 +814,59 @@ func test_current_run_keys() -> String:
 	return ""
 
 
+# 押し間違いの受け止め: 画面が出た直後と手の直後は、次の手を受けない。めくりの途中のスワイプは飛ばすだけ。
+# 実績の通知は、札がめくれてから出す。
+func test_press_guard() -> String:
+	Tokens.apply_settings({})
+	var app := StubApp.new(_fresh_store(), root)
+	var st = RunState.new("x", _ordered_deck())
+	var play = PlayScreen.new()
+	play.setup(app, st, RunStats.new("run", false), "run", "2026-11-11", false)
+	Kit.press_guard_ms = 300
+	root.add_child(play)
+	play.relayout(true, Rect2(0, 0, 1280, 720))
+	var err := ""
+	play._act("H", true)
+	if st.actions != "":
+		err = "a press right after the screen opened must be dropped"
+	play.quiet_until = 0
+	play.last_input_frame = -1
+	play._act("H", true)
+	play._skip_flip()
+	play.last_input_frame = -1
+	play._act("H", true)
+	Kit.press_guard_ms = 0
+	if err == "" and st.actions != "H":
+		err = "a second press right after a move must be dropped, got " + st.actions
+	# めくりの途中に札の上を押してはじいても、次の手にならない
+	play.quiet_until = 0
+	play.last_input_frame = -1
+	play._act("H", true)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = play.card.get_global_rect().get_center()
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.position = down.position - Vector2(0, 200)
+	play._input(down)
+	play._skip_flip()
+	play.last_input_frame = -1
+	play._input(up)
+	if err == "" and st.actions != "HH":
+		err = "a swipe that began during the flip must only skip it, got " + st.actions
+	# 3 連続目(A-03): 通知は札がめくれてから
+	play.last_input_frame = -1
+	play._act("H", true)
+	if err == "" and (play.pending_toasts != ["A-03"] or play.toast.busy):
+		err = "the toast must wait for the flip: " + str(play.pending_toasts)
+	play._skip_flip()
+	if err == "" and (not play.pending_toasts.is_empty() or not play.toast.busy):
+		err = "the toast must come out after the flip"
+	play.free()
+	return err
+
+
 # 手の途中で取った実績は、その手の保存に入る(「つづきから」の後も結果に出すため)。
 func test_run_ach_saved_with_the_move() -> String:
 	Tokens.apply_settings({})
@@ -1205,12 +1262,15 @@ func test_pages_build() -> String:
 	for played in [false, true]:
 		if played:
 			app.save.finish_run(_play("P1", "LL1:test:14")[1], "2026-11-11", 315)
-		for script in [AchievementsScreen, RecordsScreen, CollectionScreen, SaveDataScreen]:
+		for script in [AchievementsScreen, RecordsScreen, CollectionScreen, SaveDataScreen, HowtoScreen]:
 			var page = script.new()
 			page.setup(app)
 			root.add_child(page)
 			for l in [true, false]:
 				page.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+			# 遊び方: 見出し 3 つ、ルールと完走の行、操作の行、対戦の行。完走の行には balance.gd の点が出る
+			if script == HowtoScreen and err == "" and (page.body.get_child_count() != 3 + S.HOWTO_RULES.size() + 1 + S.HOWTO_OPS.size() + 1 or not page.body.get_child(1 + S.HOWTO_RULES.size()).text.contains("3,000")):
+				err = "the how-to page must list the rules, the clear bonus, the controls and versus"
 			if script == AchievementsScreen and err == "" and page.side.text != S.ACH_COUNT % [app.save.data["achievements"].size(), 35]:
 				err = "achievement count: " + page.side.text
 			# 通算の表・見出し・「まだ記録がありません」の 3 つと、追補 1 の見出しと表が 3 組
@@ -1471,6 +1531,9 @@ func test_blackjack_screen() -> String:
 	t._finish_tween()
 	if err == "" and (w["wallet"] != 2100 or w["wallet_peak"] != 2100 or w["bj_wins"] != 2 or t.rows["player"].size() != 3 or t.stake != 1000 or t.bet != 500 or CasinoTable.last_bets["bj"] != 500):
 		err = "double: wallet %d stake %d" % [w["wallet"], t.stake]
+	# 勝負が付いたときの増えた点には「戻り」と付ける(賭けた点を含む総額)
+	if err == "" and t.delta_label.text != S.DELTA_RETURN % "2,000":
+		err = "the return must be labelled: " + t.delta_label.text
 	# ダブルに足りない(E-A3)。バーストでは、ディーラーの裏の札を開けない
 	w["wallet"] = 150
 	t._pick_bet(100)
@@ -1486,6 +1549,15 @@ func test_blackjack_screen() -> String:
 	t._finish_tween()
 	if err == "" and (t.message.text != S.BJ_RESULTS["bust"] or w["wallet"] != 50 or t.totals["dealer"].text != "10" or t.rows["dealer"][1].face_up):
 		err = "bust: %s wallet %d" % [t.message.text, w["wallet"]]
+	# 勝負が付いた直後の「配る」は受けない(連打で、結果を読む前に次が始まらないように)
+	Kit.press_guard_ms = 300
+	t._end("", Tokens.TEXT, "tap", 0)
+	t.last_input_frame = -1
+	t._deal()
+	Kit.press_guard_ms = 0
+	t.quiet_until = 0
+	if err == "" and (t.phase != "bet" or w["wallet"] != 50):
+		err = "a deal right after the end of a hand must be dropped"
 	# E-A2: 払えない点を選んでいたら下げる。払えない選択肢は押せない
 	if err == "" and (t.bet != 50 or not t.bet_buttons[2].disabled or t.bet_buttons[1].disabled):
 		err = "the bet must drop to what the wallet can pay, got %d" % t.bet
@@ -2172,6 +2244,8 @@ func test_room_screen() -> String:
 	tick.call()
 	if err == "" and (host_room.mode != "host" or ha.session == null or not ha.session.is_host or texts.call(host_room).count(S.ROOM_INVITE_MAKE) != 3):
 		err = "a host room must show three empty seats"
+	if err == "" and (not S.HOWTO_RULES[0] in texts.call(host_room) or not S.HOWTO_VERSUS in texts.call(host_room)):
+		err = "a room must show how to play (a guest who came by invite never sees the tutorial)"
 	var start_button := func(): return host_room.frame.find_children("*", "Button", true, false).filter(func(b): return b.text == S.ROOM_START)[0]
 	if err == "" and not start_button.call().disabled:
 		err = "start must be disabled until a guest is connected"

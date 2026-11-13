@@ -17,6 +17,7 @@ var scroll: ScrollContainer
 var rows: VBoxContainer
 var back: Button
 var tutorial_queued := false
+var name_bad := false
 
 
 func setup(app_ref) -> void:
@@ -89,9 +90,13 @@ func _rebuild() -> void:
 	# FR-46: 対戦で相手に見える名前。字を打てない端末があるので、ブラウザの入力の小窓で変える
 	var rename := Kit.button(S.BTN_CHANGE, T.FS_BODY, "ghost")
 	rename.pressed.connect(func():
-		if app.set_player_name(app.bridge.prompt_text(S.ROOM_RENAME_ASK)):
-			_rebuild.call_deferred())
+		var text: String = app.bridge.prompt_text(S.ROOM_RENAME_ASK)
+		# やめたとき(空)は何も言わない。通らない名前は、理由を 1 行出す
+		name_bad = text != "" and not app.set_player_name(text)
+		_rebuild.call_deferred())
 	_row(S.SET_NAME + "  " + str(st["name"]), [rename])
+	if name_bad:
+		rows.add_child(Kit.label(S.ROOM_NAME_BAD, T.FS_SMALL, T.W_BODY, T.BAD))
 
 
 func _choice(title: String, options: Array, key: String) -> void:

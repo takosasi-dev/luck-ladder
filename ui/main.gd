@@ -29,6 +29,7 @@ const PAGES := {
 	"achievements": preload("res://ui/screens/achievements.gd"),
 	"records": preload("res://ui/screens/records.gd"),
 	"collection": preload("res://ui/screens/collection.gd"),
+	"howto": preload("res://ui/screens/howto.gd"),
 	"blackjack": preload("res://ui/screens/blackjack.gd"),
 	"poker": preload("res://ui/screens/poker.gd"),
 }
@@ -238,6 +239,8 @@ func open_data() -> void:
 
 # 保存データを丸ごと入れ替えた後は、設定を写し直してタイトルから始める。
 func _on_data_replaced(message: String) -> void:
+	# 対戦中に消した・読み込んだときは、部屋を閉じてから戻る(つないだままだと、相手が待ち続ける)
+	close_session()
 	apply_settings()
 	notice = message
 	show_title()

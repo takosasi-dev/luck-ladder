@@ -119,6 +119,9 @@ func shake(tw: Tween, target: Control, sec: float) -> void:
 
 # 呼びかけの字(「大穴」「ぴたり」「完走」など)。同時に 1 つで、重なったら順に出す。
 func callout(text: String, color: Color, at: Rect2) -> void:
+	# 速く遊ぶと溜まって、何手も前の字が後から出る。待ちは 2 つまでにして、古い物から捨てる
+	if _callout_queue.size() >= 2:
+		_callout_queue.pop_front()
 	_callout_queue.append([text, color, at])
 	if not _callout_busy:
 		_next_callout()

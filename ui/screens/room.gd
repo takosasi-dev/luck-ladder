@@ -179,6 +179,11 @@ func _rebuild() -> void:
 		"guest":
 			_build_guest()
 	_text(S.ROOM_IP_NOTE, T.FS_SMALL, T.TEXT_DIM)
+	if mode in ["host", "guest"]:
+		# 招待から直接入った人は、手ほどきを見ないまま対戦が始まる。待っている間に読めるように、遊び方を出す
+		_text(S.BTN_HOWTO, T.FS_BODY, T.BRASS_HI)
+		for line in S.HOWTO_RULES + [S.HOWTO_VERSUS]:
+			_text(line, T.FS_SMALL, T.TEXT).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	# 知らせは下の段の決まった欄に出す(上に差し込むと、押そうとしたボタンが動く)
 	note.text = message
 	note.add_theme_color_override("font_color", said)

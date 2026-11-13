@@ -50,20 +50,19 @@ func setup(title_info: Dictionary) -> void:
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# 選んだ裏面の札が、薄く、ゆっくり流れる(控えめでは出さない)。ほかの部品より先に足して、いちばん後ろに描く
+	# 選んだ裏面の札が、薄く、ゆっくり流れる(控えめでは隠す。relayout で出し分ける)。ほかの部品より先に足して、いちばん後ろに描く
 	drift = Control.new()
 	drift.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(drift)
-	if not T.lite:
-		for d in DRIFT:
-			var c := Card.new()
-			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			c.size = DRIFT_SIZE
-			c.pivot_offset = DRIFT_SIZE / 2
-			c.rotation = d[3]
-			c.modulate.a = DRIFT_ALPHA
-			drift.add_child(c)
-			c.show_card(-1, false)
+	for d in DRIFT:
+		var c := Card.new()
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		c.size = DRIFT_SIZE
+		c.pivot_offset = DRIFT_SIZE / 2
+		c.rotation = d[3]
+		c.modulate.a = DRIFT_ALPHA
+		drift.add_child(c)
+		c.show_card(-1, false)
 	logo = Kit.label(S.TITLE, T.FS_TITLE, T.W_BLACK, T.BRASS_HI)
 	logo.add_theme_font_override("font", Kit.num_italic())
 	logo.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
@@ -100,7 +99,7 @@ func _ready() -> void:
 	_pair([[S.BTN_BJ, "blackjack"], [S.BTN_POKER, "poker"]], "green")
 	var ach := S.BTN_ACH + "  " + S.ACH_COUNT % [info.get("ach_done", 0), info.get("ach_total", 0)]
 	_pair([[ach, "achievements"], [S.BTN_COLLECTION, "collection"]])
-	_pair([[S.BTN_RECORDS, "records"], [S.BTN_SETTINGS, "settings"]])
+	_pair([[S.BTN_HOWTO, "howto"], [S.BTN_RECORDS, "records"], [S.BTN_SETTINGS, "settings"]])
 	# 「見習い」だけでは何の表示か分からないので、見出しと、次の称号までの点を添える
 	var rank_text: String = S.TITLE_RANK % S.TITLES[clampi(info.get("title_rank", 1), 1, S.TITLES.size()) - 1]
 	if info.get("title_next", -1) >= 0:
@@ -111,7 +110,6 @@ func _ready() -> void:
 	version_label = Kit.num_label(S.VERSION_PREFIX + str(ProjectSettings.get_setting("application/config/version")), T.FS_SMALL, T.TEXT_DIM, T.W_BODY)
 	version_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(version_label)
-	set_process(not T.lite)
 
 
 func _button(text: String, kind: String, cb: Callable, group: Array, parent: Control = null) -> Button:
@@ -217,6 +215,10 @@ func relayout(is_landscape: bool, view_rect: Rect2) -> void:
 	landscape = is_landscape
 	view = view_rect
 	size = Vector2(1280, 720) if landscape else Vector2(720, 1280)
+	# 設定を閉じた後にもここを通るので、演出の強さの切り替えがその場で効く
+	drift.visible = not T.lite
+	set_process(not T.lite)
+	rungs.queue_redraw()
 	# 横長は高さ 64 と 54(段が 1 つ増えたので詰めた。追補 1 の前提 A5)、縦長は当たりを 96 にする(画面設計書 §3.1)
 	for b in tall:
 		b.custom_minimum_size.y = 64 if landscape else 96

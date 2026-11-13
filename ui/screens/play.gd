@@ -73,6 +73,10 @@ var flip_tw: Tween
 var post_tw: Tween
 var hl_tw: Tween
 var last_input_frame := -1
+# この時刻(ms)までは、手を受けない(Kit.press_guard_ms)
+var quiet_until := 0
+# めくりが終わってから出す実績の通知(札より先に出すと、当たり外れが分かってしまう)
+var pending_toasts := []
 var run_ach := []
 var tut_step := -1
 var end_result := {}
@@ -120,6 +124,8 @@ func _ready() -> void:
 		tut_step = 1
 	_snap()
 	_refresh()
+	# 前の画面のボタンを二度押しした 2 回目が、ここのボタンに入らないようにする
+	quiet_until = Time.get_ticks_msec() + Kit.press_guard_ms
 
 
 func _mode_text() -> String:
@@ -334,7 +340,8 @@ func _input(event: InputEvent) -> void:
 	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT:
 		return
 	if event.pressed:
-		swipe_from = event.position if card.get_global_rect().has_point(event.position) else Vector2.INF
+		# めくりの途中に押したら、演出を飛ばすだけ(E-3)。はじいても、次の手にはしない
+		swipe_from = event.position if not busy and card.get_global_rect().has_point(event.position) else Vector2.INF
 	elif swipe_from != Vector2.INF:
 		var dy: float = event.position.y - swipe_from.y
 		swipe_from = Vector2.INF
@@ -354,11 +361,12 @@ func _act(side: String, show_press: bool) -> void:
 	if busy:
 		_skip_flip()
 		return
-	if st.ended != "":
+	if st.ended != "" or Time.get_ticks_msec() < quiet_until:
 		return
 	var res: Dictionary = st.apply(side)
 	if res["result"] == "invalid":
 		return
+	quiet_until = Time.get_ticks_msec() + Kit.press_guard_ms
 	_finish_post()
 	stats.note_counter(counter_on)
 	app.sfx.play("tap")
@@ -372,8 +380,7 @@ func _act(side: String, show_press: bool) -> void:
 		# FR-17: 条件を満たした手の直後に達成にして、通知を出す
 		var fresh: Array = save.judge_move(stats, date)
 		run_ach.append_array(fresh)
-		for id in fresh:
-			toast.push(S.ACHIEVEMENTS[id][0])
+		pending_toasts.append_array(fresh)
 		# 対戦は途中の保存をしない(D-29)。この手で取った実績も入れるので、判定の後に書く
 		if mode != "versus":
 			save.save_current(mode, st.seed_text, date, st.actions, stats.counter_shown, run_ach)
@@ -385,11 +392,19 @@ func _act(side: String, show_press: bool) -> void:
 			_versus_final(false)
 		else:
 			vs.report(VersusState.row_from_run(st, stats, 0, vs.round_no, false))
-	_advance_tutorial()
 	if side == "B":
+		_after_move()
 		_animate_bank(res)
 	else:
 		_animate_flip(res)
+
+
+# 実績の通知と手ほどきの次の行。確保はすぐ、予想は札がめくれてから(先に出すと、当たり外れが分かる)。
+func _after_move() -> void:
+	for id in pending_toasts:
+		toast.push(S.ACHIEVEMENTS[id][0])
+	pending_toasts = []
+	_advance_tutorial()
 
 
 func _finish_run() -> void:
@@ -474,6 +489,7 @@ func _on_flip_done(res: Dictionary) -> void:
 	incoming.visible = false
 	card.scale.x = 1.0
 	_refresh()
+	_after_move()
 	var r := Layout.rects(landscape, mode == "versus")
 	var callout_at: Rect2 = Layout.over(landscape, mode == "versus")["callout"]
 	var card_c: Vector2 = r["card"].get_center()
@@ -594,7 +610,9 @@ func _open_pause() -> void:
 		var key: String = item[1]
 		row.changed.connect(func(v: int): _set_volume(key, v))
 		box.add_child(row)
-	box.add_child(Kit.label(S.PAUSE_NOTE, T.FS_SMALL, T.W_BODY, T.TEXT_DIM))
+	# 対戦は途中の保存をしない(D-29)ので、「保存されます」は出さない
+	if mode != "versus":
+		box.add_child(Kit.label(S.PAUSE_NOTE, T.FS_SMALL, T.W_BODY, T.TEXT_DIM))
 	pause_layer.add_child(box)
 	Kit.place(box, Rect2((size.x - 520) / 2, (size.y - 640) / 2, 520, 640))
 	add_child(pause_layer)
