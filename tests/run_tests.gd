@@ -1592,6 +1592,12 @@ func test_invite_codec() -> String:
 	for junk in [null, 5, "x", [], {}]:
 		if Invite.encode(junk) != "" or Invite.to_sdp(junk) != "":
 			return "encode and to_sdp must refuse junk"
+	# 実験用の足し: 返事だけは、候補 0 個でも作れる(招待は上のとおり作れない)
+	var bare := _invite_items(Invite.KIND_ANSWER, 1, false)
+	bare["cands"] = []
+	var bare_back := Invite.decode(Invite.encode(bare), Invite.KIND_ANSWER)
+	if bare_back["error"] != "" or bare_back["items"] != bare or Invite.to_sdp(bare) == "" or not Invite.candidate_lines(bare).is_empty():
+		return "an answer without candidates must survive the code"
 	return ""
 
 
@@ -1675,6 +1681,47 @@ func test_invite_sdp() -> String:
 			return "both sides must use the derived credentials"
 	if munged.split("\r\n").size() != lines.size() or Invite.from_sdp(munged, [], true)["fp"] != items["fp"]:
 		return "munge must only rewrite the two credential lines"
+	return ""
+
+
+# 実験用の足し、その 2: IPv6 の候補は、頼んだときだけ載る。コードと候補の行を行き来しても同じアドレスに戻る。
+func test_invite_v6() -> String:
+	var full := "20010db800000000000000000012abcd".hex_decode()
+	for text in ["2001:db8::12:abcd", "2001:0DB8:0:0:0:0:12:ABCD", "2001:db8:0:0::12:abcd"]:
+		if Invite.parse_ip6(text) != full:
+			return "parse_ip6 of " + text
+	if Invite.parse_ip6("::1").hex_encode() != "0".repeat(31) + "1" or Invite.parse_ip6("1::").hex_encode() != "0001" + "0".repeat(28):
+		return "parse_ip6 must fill the gap with zeros"
+	for text in ["", "1:2:3", "1::2::3", "12345::1", "g::1", "-1::1", "1:2:3:4:5:6:7:8:9", "1:2:3:4:5:6:7::8", "2001:db8:::1", "fe80::1%eth0", "::ffff:192.0.2.1"]:
+		if not Invite.parse_ip6(text).is_empty():
+			return "parse_ip6 must refuse " + text
+	var lines := [
+		"candidate:1 1 udp 1677732095 2001:db8::12:abcd 61001 typ srflx raddr :: rport 0",
+		"candidate:2 1 udp 1677729535 203.0.113.9 61000 typ srflx",
+		"candidate:3 1 udp 2122197247 fe80::1 54401 typ host",
+		"candidate:4 1 udp 2122197247 ::1 54401 typ host",
+		"candidate:5 1 tcp 1518280447 2001:db8::2 9 typ host tcptype active",
+		"candidate:6 1 udp 1677732095 2001:db8::12:abcd 61001 typ srflx",
+	]
+	var v4 := {"type": Invite.CAND_SRFLX, "ip": [203, 0, 113, 9], "port": 61000}
+	var v6 := {"type": Invite.CAND_V6, "ip6": full, "port": 61001}
+	if Invite.pick_candidates(lines) != [v4] or Invite.pick_candidates(lines, true) != [v4]:
+		return "an IPv6 candidate must not be picked unless asked"
+	if Invite.pick_candidates(lines, false, true) != [v4, v6]:
+		return "picked with IPv6: " + str(Invite.pick_candidates(lines, false, true))
+	var items := _invite_items(Invite.KIND_ANSWER, 1, false)
+	items["cands"] = [v6]
+	var back := Invite.decode(Invite.encode(items), Invite.KIND_ANSWER)
+	if back["error"] != "" or back["items"] != items:
+		return "an IPv6 candidate must survive the code"
+	var line: String = Invite.candidate_lines(items)[0]
+	if not line.contains(" 2001:db8:0:0:0:0:12:abcd 61001 typ srflx") or Invite.pick_candidates([line], false, true) != [v6]:
+		return "IPv6 candidate line: " + line
+	# 外とつながらない住所(リンクの中だけ、自分の機械、全部 0、長さ違い)は、コードにしない
+	for bad in ["fe800000000000000000000000000001", "0".repeat(31) + "1", "0".repeat(32), "20010db8"]:
+		items["cands"] = [{"type": Invite.CAND_V6, "ip6": bad.hex_decode(), "port": 61001}]
+		if Invite.encode(items) != "":
+			return "encode must refuse the IPv6 address " + bad
 	return ""
 
 

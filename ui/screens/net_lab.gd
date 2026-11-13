@@ -27,6 +27,7 @@ var log_to_console := false
 var rtc
 var derived := false
 var with_mdns := false
+var with_v6 := false
 var pending_kind := 0
 var pending_reply := 0
 var invite_check := -1
@@ -47,6 +48,7 @@ var paste_box: TextEdit
 var record_box: TextEdit
 var derived_button: Button
 var mdns_button: Button
+var v6_button: Button
 
 
 func setup(app_ref, bridge_ref, url_query: String) -> void:
@@ -56,6 +58,7 @@ func setup(app_ref, bridge_ref, url_query: String) -> void:
 	log_to_console = query.contains("lab=log")
 	# 招待の URL に付けた実験の切り替えを、ゲストも同じにする
 	with_mdns = query.contains("mdns=1")
+	with_v6 = query.contains("v6=1")
 	derived = query.contains("derived=1")
 
 
@@ -86,6 +89,7 @@ func _ready() -> void:
 	_button(S.LAB_PROMPT, "ghost", func(): _take_text(bridge.prompt_text(S.LAB_PROMPT_ASK), "prompt"))
 	derived_button = _button("", "ghost", _toggle_derived)
 	mdns_button = _button("", "ghost", _toggle_mdns)
+	v6_button = _button("", "ghost", _toggle_v6)
 	_button(S.LAB_PING, "green", _start_ping)
 	record_box = Kit.text_box("", false)
 	record_box.custom_minimum_size = Vector2(0, 320)
@@ -162,9 +166,15 @@ func _toggle_mdns() -> void:
 	_show_derived()
 
 
+func _toggle_v6() -> void:
+	with_v6 = not with_v6
+	_show_derived()
+
+
 func _show_derived() -> void:
 	derived_button.text = S.LAB_DERIVED % (S.LAB_ON if derived else S.LAB_OFF)
 	mdns_button.text = S.LAB_MDNS % (S.LAB_ON if with_mdns else S.LAB_OFF)
+	v6_button.text = S.LAB_V6 % (S.LAB_ON if with_v6 else S.LAB_OFF)
 
 
 func _copy_url() -> void:
@@ -180,6 +190,7 @@ func _new_rtc() -> void:
 		rtc.queue_free()
 	rtc = Rtc.new()
 	rtc.with_mdns = with_mdns
+	rtc.with_v6 = with_v6
 	rtc.described.connect(_on_described)
 	rtc.opened.connect(_on_opened)
 	rtc.received.connect(_on_received)
@@ -255,11 +266,13 @@ func _take_answer(code: String, from: String) -> void:
 
 @warning_ignore("integer_division")
 func _on_described(items: Dictionary) -> void:
-	_note("local_type=%s gather_ms=%d gather_complete=%s" % [rtc.local_type, rtc.gather_ms, rtc.gather_complete])
+	_note("local_type=%s gather_ms=%d gather_complete=%s early_connected=%s" % [rtc.local_type, rtc.gather_ms, rtc.gather_complete, rtc.early_connected])
 	_note("local_sdp=" + JSON.stringify(rtc.local_sdp))
 	for line in rtc.cand_lines:
 		_note("cand=" + _mask(line))
-	if items.is_empty() or items["cands"].is_empty():
+	# 実験用の足し、その 3: 返事を作る側がもうつながっているなら、載せる候補が無くても返事を作る(ホストは届いた通信から相手を知る)
+	var bare_answer: bool = pending_kind == Codec.KIND_ANSWER and rtc.early_connected
+	if items.is_empty() or (items["cands"].is_empty() and not bare_answer):
 		# E-23
 		_fail(S.NET_NO_ROUTE, "no_candidate")
 		return
@@ -275,8 +288,8 @@ func _on_described(items: Dictionary) -> void:
 	made_at = Time.get_ticks_msec()
 	url_box.text = bridge.page_url() + ("?j=" if invite else "?a=") + code
 	if invite:
-		url_box.text += ("&mdns=1" if with_mdns else "") + ("&derived=1" if derived else "")
-	_note("%s_code chars=%d bytes=%d derived=%s mdns=%s cands=%d" % ["invite" if invite else "answer", code.length(), code.length() * 3 / 4, derived, with_mdns, items["cands"].size()])
+		url_box.text += ("&mdns=1" if with_mdns else "") + ("&v6=1" if with_v6 else "") + ("&derived=1" if derived else "")
+	_note("%s_code chars=%d bytes=%d derived=%s mdns=%s v6=%s cands=%d" % ["invite" if invite else "answer", code.length(), code.length() * 3 / 4, derived, with_mdns, with_v6, items["cands"].size()])
 	if log_to_console:
 		print("LAB url=", url_box.text)
 	_say(S.LAB_INVITE_READY if invite else S.LAB_ANSWER_READY)
@@ -367,8 +380,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		back_pressed.emit()
 	elif log_to_console:
-		# lab=log のときだけ: 自動の確認のために、I・D・P のキーで「招待を作る」「合言葉を省く」「送る試験」を押す
+		# lab=log のときだけ: 自動の確認のために、I・D・M・V・P のキーで「招待を作る」と切り替え 3 つ、「送る試験」を押す
 		match event.keycode:
+			KEY_V:
+				_toggle_v6()
 			KEY_I:
 				_make_invite()
 			KEY_D:

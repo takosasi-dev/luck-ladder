@@ -14,22 +14,28 @@ const CAND_SRFLX := 2
 # ブラウザが自分の機械の IP の代わりに出す、その場かぎりの名前(<UUID>.local)。同じ Wi-Fi の中や同じ PC でつなぐのに要る
 const CAND_MDNS := 3
 const MDNS_SIZE := 16
+# 実験用の足し、その 2(同じく §9.16 の案には無い): IPv6 のアドレス(16 バイト)。外向きの IPv4 を持たない回線のため
+const CAND_V6 := 4
+# 16 バイトの住所を持つ種類と、項目の中での名前
+const LONG_KEYS := {CAND_MDNS: "name", CAND_V6: "ip6"}
+const HEX_CHARS := "0123456789abcdef"
 const CANDS_MAX := 3
 const FP_SIZE := 32
 # 取り出し: ?j= も ?a= も無いとき、base64url の字がこの数以上続く最初の並びを使う
 const CODE_MIN := 40
 const ICE_CHARS := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 const URL_CHARS := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-const CAND_NAMES := {CAND_HOST: "host", CAND_SRFLX: "srflx", CAND_MDNS: "host"}
+const CAND_NAMES := {CAND_HOST: "host", CAND_SRFLX: "srflx", CAND_MDNS: "host", CAND_V6: "srflx"}
 # 復元する候補の優先度(Chrome が付ける値にならった。大きい方を先に試す)
-const CAND_PRIORITY := {CAND_HOST: 2122260223, CAND_SRFLX: 1686052607, CAND_MDNS: 2122260223}
+const CAND_PRIORITY := {CAND_HOST: 2122260223, CAND_SRFLX: 1686052607, CAND_MDNS: 2122260223, CAND_V6: 1686052607}
 
 # 項目(items)の形:
 #   kind      KIND_INVITE か KIND_ANSWER
 #   fp        暗号の指紋(SHA-256、PackedByteArray の 32 バイト)
 #   derived   合言葉を省いたか。真なら ufrag と pwd は空の文字
 #   ufrag pwd 合言葉(ICE の字だけ)
-#   cands     候補 1〜3 個。[{type: CAND_HOST か CAND_SRFLX, ip: [4 つの数], port}]。CAND_MDNS は {type, name: 16 バイト, port}
+#   cands     候補 1〜3 個(返事は 0 個でもよい)。[{type: CAND_HOST か CAND_SRFLX, ip: [4 つの数], port}]。CAND_MDNS は {type, name: 16 バイト, port}、
+#             CAND_V6 は {type, ip6: 16 バイト, port}
 #   reply_to  返事のときだけ、対応する招待の検査値。招待では 0
 
 
@@ -61,8 +67,10 @@ static func _valid_cand(c) -> bool:
 	var port = c.get("port")
 	if not port is int or port < 1 or port > 65535:
 		return false
-	if c["type"] == CAND_MDNS:
-		return c.size() == 3 and c.get("name") is PackedByteArray and c["name"].size() == MDNS_SIZE
+	if c["type"] in LONG_KEYS:
+		var v = c.get(LONG_KEYS[c["type"]])
+		# IPv6 は、外とつながる範囲(2000::/3)の物だけ。自分の機械の中やリンクの中だけの住所は通さない
+		return c.size() == 3 and v is PackedByteArray and v.size() == MDNS_SIZE and (c["type"] == CAND_MDNS or (v[0] & 0xE0) == 0x20)
 	if c.size() != 3 or not c.get("ip") is Array or c["ip"].size() != 4:
 		return false
 	for n in c["ip"]:
@@ -82,7 +90,8 @@ static func is_valid(items) -> bool:
 	elif not is_ice_text(items.get("ufrag")) or not is_ice_text(items.get("pwd")):
 		return false
 	var cands = items.get("cands")
-	if not cands is Array or cands.size() < 1 or cands.size() > CANDS_MAX:
+	# 実験用の足し、その 3: 返事だけは候補 0 個でもよい(ゲストが先につながっていれば、ホストは届いた通信から相手を知る)
+	if not cands is Array or cands.size() < (1 if items["kind"] == KIND_INVITE else 0) or cands.size() > CANDS_MAX:
 		return false
 	for c in cands:
 		if not _valid_cand(c):
@@ -113,7 +122,7 @@ static func encode(items) -> String:
 	b.append(items["cands"].size())
 	for c in items["cands"]:
 		b.append(c["type"])
-		b.append_array(c["name"] if c["type"] == CAND_MDNS else PackedByteArray(c["ip"]))
+		b.append_array(c[LONG_KEYS[c["type"]]] if c["type"] in LONG_KEYS else PackedByteArray(c["ip"]))
 		b.append(c["port"] >> 8)
 		b.append(c["port"] & 0xFF)
 	if items["kind"] == KIND_ANSWER:
@@ -156,14 +165,14 @@ static func decode(code: String, want_kind: int) -> Dictionary:
 	pos += 1
 	var cands := []
 	for i in mini(count, CANDS_MAX):
-		# 候補の長さは種類で決まる: 種類 1 バイト + 住所(IPv4 は 4 バイト、名前は 16 バイト)+ ポート 2 バイト
-		var mdns := pos < size and bytes[pos] == CAND_MDNS
-		var end := pos + 1 + (MDNS_SIZE if mdns else 4)
+		# 候補の長さは種類で決まる: 種類 1 バイト + 住所(IPv4 は 4 バイト、名前と IPv6 は 16 バイト)+ ポート 2 バイト
+		var key: String = LONG_KEYS.get(bytes[pos], "") if pos < size else ""
+		var end := pos + 1 + (MDNS_SIZE if key != "" else 4)
 		if end + 2 > size:
 			return bad
 		var c := {"type": bytes[pos], "port": bytes[end] << 8 | bytes[end + 1]}
-		if mdns:
-			c["name"] = bytes.slice(pos + 1, end)
+		if key != "":
+			c[key] = bytes.slice(pos + 1, end)
 		else:
 			c["ip"] = Array(bytes.slice(pos + 1, end))
 		cands.append(c)
@@ -206,7 +215,35 @@ static func ip_text(ip: Array) -> String:
 	return "%d.%d.%d.%d" % ip
 
 
-# 候補の 1 行(candidate:…)→ {type, ip, port}。UDP の IPv4 で、自分の機械か外向きの物だけ。ほかは空の辞書。
+# IPv6 の文字(:: の省略つき)→ 16 バイト。読めなければ空。
+static func parse_ip6(text: String) -> PackedByteArray:
+	var halves := text.to_lower().split("::")
+	var groups := []
+	for half in halves:
+		groups.append([] if half == "" else Array(half.split(":")))
+	# :: は 1 回まで。:: が無ければ 8 組、あれば 7 組以下
+	if halves.size() > 2 or (halves.size() == 1 and groups[0].size() != 8) or (halves.size() == 2 and groups[0].size() + groups[1].size() > 7):
+		return PackedByteArray()
+	var out := PackedByteArray()
+	for i in halves.size():
+		while i == 1 and out.size() < MDNS_SIZE - groups[1].size() * 2:
+			out.append(0)
+		for g in groups[i]:
+			if g.length() < 1 or g.length() > 4 or not _only(g, HEX_CHARS):
+				return PackedByteArray()
+			out.append(g.hex_to_int() >> 8)
+			out.append(g.hex_to_int() & 0xFF)
+	return out
+
+
+static func ip6_text(ip6: PackedByteArray) -> String:
+	var parts := PackedStringArray()
+	for i in 8:
+		parts.append("%x" % (ip6[i * 2] << 8 | ip6[i * 2 + 1]))
+	return ":".join(parts)
+
+
+# 候補の 1 行(candidate:…)→ {type, ip, port}。UDP で、自分の機械か外向きの物だけ(IPv4、.local の名前、IPv6)。ほかは空の辞書。
 static func parse_candidate(line: String) -> Dictionary:
 	var p := line.strip_edges().trim_prefix("a=").split(" ", false)
 	if p.size() < 8 or not p[0].begins_with("candidate:") or p[1] != "1" or p[2].to_lower() != "udp" or p[6] != "typ":
@@ -218,6 +255,10 @@ static func parse_candidate(line: String) -> Dictionary:
 	if p[4].to_lower().ends_with(".local") and p[7] == "host" and p[4].length() == 42 and hex.length() == MDNS_SIZE * 2 and hex.is_valid_hex_number():
 		c["type"] = CAND_MDNS
 		c["name"] = hex.hex_decode()
+		return c if _valid_cand(c) else {}
+	if p[4].contains(":"):
+		c["type"] = CAND_V6
+		c["ip6"] = parse_ip6(p[4])
 		return c if _valid_cand(c) else {}
 	var parts := p[4].split(".")
 	if parts.size() != 4:
@@ -232,13 +273,14 @@ static func parse_candidate(line: String) -> Dictionary:
 
 
 # 候補の行の集まりから、載せる候補を選ぶ: 外向きを先に、重なりを除いて CANDS_MAX 個まで。
-# with_mdns が真のときだけ、.local の名前の候補も載せる(実験用の足し)。
-static func pick_candidates(lines: Array, with_mdns: bool = false) -> Array:
+# with_mdns が真のときだけ .local の名前の候補を、with_v6 が真のときだけ IPv6 の候補を載せる(どちらも実験用の足し)。
+static func pick_candidates(lines: Array, with_mdns: bool = false, with_v6: bool = false) -> Array:
 	var out := []
-	for type in [CAND_SRFLX, CAND_MDNS, CAND_HOST]:
+	for type in [CAND_SRFLX, CAND_V6, CAND_MDNS, CAND_HOST]:
 		for line in lines:
 			var c := parse_candidate(line)
-			if not c.is_empty() and c["type"] == type and (with_mdns or type != CAND_MDNS) and not c in out and out.size() < CANDS_MAX:
+			var wanted: bool = (with_mdns or type != CAND_MDNS) and (with_v6 or type != CAND_V6)
+			if not c.is_empty() and c["type"] == type and wanted and not c in out and out.size() < CANDS_MAX:
 				out.append(c)
 	return out
 
@@ -262,11 +304,11 @@ static func _sdp_value(sdp: String, key: String) -> String:
 
 
 # 自分の接続情報と候補の行から、項目(kind と reply_to を除く)を取り出す。足りなければ空の辞書。
-static func from_sdp(sdp: String, cand_lines: Array, derived: bool, with_mdns: bool = false) -> Dictionary:
+static func from_sdp(sdp: String, cand_lines: Array, derived: bool, with_mdns: bool = false, with_v6: bool = false) -> Dictionary:
 	var hex := _sdp_value(sdp, "a=fingerprint:sha-256 ").replace(":", "")
 	if hex.length() != FP_SIZE * 2 or not hex.is_valid_hex_number():
 		return {}
-	var items := {"fp": hex.hex_decode(), "derived": derived, "cands": pick_candidates(cand_lines, with_mdns)}
+	var items := {"fp": hex.hex_decode(), "derived": derived, "cands": pick_candidates(cand_lines, with_mdns, with_v6)}
 	items["ufrag"] = "" if derived else _sdp_value(sdp, "a=ice-ufrag:")
 	items["pwd"] = "" if derived else _sdp_value(sdp, "a=ice-pwd:")
 	return items
@@ -326,6 +368,6 @@ static func candidate_lines(items) -> PackedStringArray:
 		return out
 	for i in items["cands"].size():
 		var c: Dictionary = items["cands"][i]
-		var address := mdns_text(c["name"]) if c["type"] == CAND_MDNS else ip_text(c["ip"])
+		var address := mdns_text(c["name"]) if c["type"] == CAND_MDNS else ip6_text(c["ip6"]) if c["type"] == CAND_V6 else ip_text(c["ip"])
 		out.append("candidate:%d 1 udp %d %s %d typ %s" % [i + 1, CAND_PRIORITY[c["type"]], address, c["port"], CAND_NAMES[c["type"]]])
 	return out

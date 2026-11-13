@@ -22,6 +22,8 @@ var channel: WebRTCDataChannel
 var derived := false
 # .local の名前の候補も載せるか(実験用の足し。core/invite_codec.gd の CAND_MDNS)
 var with_mdns := false
+# IPv6 の候補も載せるか(実験用の足し、その 2。core/invite_codec.gd の CAND_V6)
+var with_v6 := false
 var local_type := ""
 var local_sdp := ""
 var cand_lines: Array = []
@@ -29,6 +31,8 @@ var _wait_until := 0
 # 候補が集まるのを待った時間(ミリ秒)と、集め終わりの合図が来たか(実験の記録用)
 var gather_ms := 0
 var gather_complete := false
+# 自分の接続情報がそろった時点で、もう相手とつながっていたか(同じ機械や同じ Wi-Fi で、ゲストに起きる)
+var early_connected := false
 var _gather_from := 0
 var _open := false
 var _closed := false
@@ -97,7 +101,8 @@ func _process(_delta: float) -> void:
 		_wait_until = 0
 		gather_ms = Time.get_ticks_msec() - _gather_from
 		gather_complete = peer.get_gathering_state() == WebRTCPeerConnection.GATHERING_STATE_COMPLETE
-		described.emit(Codec.from_sdp(local_sdp, cand_lines, derived, with_mdns))
+		early_connected = peer.get_connection_state() == WebRTCPeerConnection.STATE_CONNECTED
+		described.emit(Codec.from_sdp(local_sdp, cand_lines, derived, with_mdns, with_v6))
 	if channel == null or _closed:
 		return
 	var state := channel.get_ready_state()
