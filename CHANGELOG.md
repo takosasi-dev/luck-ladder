@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-13
+
+対戦の表示の直しです。
+
+### Fixed
+
+- 対戦の結果の画面で、一番上の順位の「位」が四角(字の無い印)になっていた
+- 招待の期限が切れた後に返事が届くと、ホストの画面に「読み取れませんでした」と出ていた。「この返事は期限が切れています。招待を作り直して、もう一度送ってください」と出すようにした
+
 ## [0.3.0] - 2026-11-13
 
 対戦(2〜4 人、試験中)を足した版です。
@@ -69,6 +78,7 @@
 - スマホの実機では、まだ確かめていません
 - 調整値は、人に遊んでもらって決めた値ではありません
 
+[0.3.1]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.3.1
 [0.3.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.3.0
 [0.2.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.2.0
 [0.1.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.1.0

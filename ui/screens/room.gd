@@ -12,7 +12,7 @@ const Kit := preload("res://ui/kit.gd")
 const Codec := preload("res://core/invite_codec.gd")
 
 const RELAY_WAIT_MS := 1000
-const ANSWER_ERRORS := {"bad": S.NET_UNREADABLE, "version": S.NET_VERSION, "kind": S.NET_IS_INVITE, "started": S.NET_NO_SEAT}
+const ANSWER_ERRORS := {"bad": S.NET_UNREADABLE, "expired": S.NET_ANSWER_LATE, "version": S.NET_VERSION, "kind": S.NET_IS_INVITE, "started": S.NET_NO_SEAT}
 const JOIN_ERRORS := {"bad": S.NET_UNREADABLE, "version": S.NET_VERSION, "kind": S.NET_IS_ANSWER, "no_rtc": S.NET_NO_RTC,
 	"no_route": S.NET_NO_ROUTE, "expired": S.NET_EXPIRED, "full": S.NET_NO_SEAT, "closed": S.NET_CLOSED, "leave": S.NET_CLOSED}
 

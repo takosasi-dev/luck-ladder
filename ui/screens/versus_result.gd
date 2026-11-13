@@ -46,7 +46,8 @@ func _ready() -> void:
 		if results[i]["id"] == my_id:
 			my_rank = ranks[i]
 	box.add_child(Kit.label(S.VS_RESULT, T.FS_HEAD, T.W_NUM))
-	box.add_child(Kit.num_label(S.VS_RANK % my_rank, T.FS_TITLE, T.BRASS_HI))
+	# 数字用の字には漢字が無い(「位」が豆腐になる)ので、本文の字で出す
+	box.add_child(Kit.label(S.VS_RANK % my_rank, T.FS_TITLE, T.W_NUM, T.BRASS_HI))
 	if app.session.host_gone:
 		_text(S.VS_HOST_LOST, T.FS_SMALL, T.BAD)
 	# 順位の順に並べる(同点は席の番号の順)

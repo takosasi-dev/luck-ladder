@@ -92,14 +92,18 @@ func _fail_seat(link: int, reason: String) -> void:
 	transport.drop(link)
 	links.erase(link)
 	var fails: int = seats[link]["fails"] + 1
+	var check: int = seats[link]["check"]
 	seats[link] = _empty_seat(fails)
 	seats[link]["state"] = "expired" if reason == "expired" else "failed"
+	if reason == "expired":
+		# 遅れて届いた返事を「期限切れ」と見分けるために、合い印だけ残す
+		seats[link]["check"] = check
 	seats[link]["reason"] = reason
 	seat_changed.emit(link)
 
 
 # 返事の文字(URL でもコードだけでも)を、対応する席に渡す。
-# 結果: ""(渡した)/ "bad"(読めない・対応する席が無い。E-25)/ "version" / "kind"(招待を貼った。E-24)/ "started"(席が無い。E-29)
+# 結果: ""(渡した)/ "bad"(読めない・対応する席が無い。E-25)/ "expired"(期限が切れた席への返事)/ "version" / "kind"(招待を貼った。E-24)/ "started"(席が無い。E-29)
 func take_answer_text(text: String) -> String:
 	var res := Codec.decode(Codec.extract(text), Codec.KIND_ANSWER)
 	if res["error"] != "":
@@ -108,6 +112,8 @@ func take_answer_text(text: String) -> String:
 		return "started"
 	for link in seats:
 		var seat: Dictionary = seats[link]
+		if seat["state"] == "expired" and seat["check"] == res["items"]["reply_to"]:
+			return "expired"
 		if seat["state"] == "inviting" and seat["check"] == res["items"]["reply_to"]:
 			if not transport.take_answer(link, res["items"]):
 				return "bad"

@@ -2003,12 +2003,29 @@ func test_versus_seat_expiry() -> String:
 	host.tick(1000)
 	host.open_seat(1)
 	host.tick(1010)
+	# 期限の前に作られた返事が、期限の後に届く
+	var guest = Session.new(LoopTransport.new(hub), false, "GUEST")
+	var got := {"answer": ""}
+	guest.answer_ready.connect(func(code): got["answer"] = code)
+	if guest.join(host.seats[1]["code"]) != "":
+		return "the guest must be able to join"
+	for i in 4:
+		guest.tick(1010)
+	if got["answer"] == "":
+		return "the guest must make an answer"
 	host.tick(1010 + B.INVITE_TTL_SEC * 1000)
 	if host.seats[1]["state"] != "inviting":
 		return "an invite lives for INVITE_TTL_SEC"
 	host.tick(1011 + B.INVITE_TTL_SEC * 1000 + 1)
 	if host.seats[1]["state"] != "expired" or host.seats[1]["code"] != "":
 		return "an invite must expire: " + str(host.seats[1])
+	if host.take_answer_text(got["answer"]) != "expired" or host.take_answer_text("junk") != "bad":
+		return "a late answer must be told apart from an unreadable one"
+	host.open_seat(1)
+	host.tick(1020 + B.INVITE_TTL_SEC * 1000)
+	if host.seats[1]["state"] != "inviting" or host.take_answer_text(got["answer"]) != "bad":
+		return "an answer to an old invite must not fit a new one"
+	guest.leave()
 	hub.clear()
 	return ""
 

@@ -161,6 +161,7 @@ const NET_IS_ANSWER := "これは返事の URL です。ホストに送ってく
 const NET_IS_INVITE := "これは招待の URL です。『招待で参加』から開いてください"
 const NET_NO_SEAT := "席がありません"
 const NET_EXPIRED := "期限が切れました。ホストに招待を作り直してもらってください"
+const NET_ANSWER_LATE := "この返事は期限が切れています。招待を作り直して、もう一度送ってください"
 const NET_CLOSED := "部屋が閉じられました"
 const NET_NO_RTC := "このブラウザでは動きません。URL をコピーして Chrome か Safari で開いてください"
 const NET_FAILED := "つながりませんでした"
