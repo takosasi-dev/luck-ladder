@@ -36,7 +36,12 @@ const Poker := preload("res://core/poker_rules.gd")
 const PokerScreen := preload("res://ui/screens/poker.gd")
 const Invite := preload("res://core/invite_codec.gd")
 const BrowserBridge := preload("res://net/browser_bridge.gd")
-const NetLab := preload("res://ui/screens/net_lab.gd")
+const NetMsg := preload("res://core/net_message.gd")
+const VersusState := preload("res://core/versus_state.gd")
+const Transport := preload("res://net/transport.gd")
+const Session := preload("res://net/versus_session.gd")
+const RoomScreen := preload("res://ui/screens/room.gd")
+const VersusResultScreen := preload("res://ui/screens/versus_result.gd")
 
 const FONT_PATH := "res://assets/fonts/NotoSansJP-Variable.ttf"
 const STRINGS_PATH := "res://core/strings.gd"
@@ -47,6 +52,73 @@ const TEST_SAVE := "user://ll_test_save.json"
 class FailStore extends SaveStore:
 	func _write_to(_file_path: String, _text: String) -> bool:
 		return false
+
+
+# AC-35: 通信を使わない代わりの通信。同じ処理の中で、指紋を合言葉にして相手を見つけ、poll のたびに届ける。
+# hub は {"n": 作った接続の数, 指紋の 16 進: [transport, link]} を、つなぐ者どうしで共有する。
+class LoopTransport extends Transport:
+	var hub: Dictionary
+	var peers := {}
+	var queue := []
+
+	func _init(shared: Dictionary) -> void:
+		hub = shared
+
+	func _items() -> Dictionary:
+		hub["n"] = hub.get("n", 0) + 1
+		var fp := PackedByteArray()
+		for i in Invite.FP_SIZE:
+			fp.append((i * 7 + hub["n"]) % 256)
+		return {"fp": fp, "derived": false, "ufrag": "Ab+/", "pwd": "abcdefghijklmnopqrstuv+/",
+			"cands": [{"type": Invite.CAND_SRFLX, "ip": [203, 0, 113, hub["n"]], "port": 50000}]}
+
+	func make_invite(link: int) -> bool:
+		queue.append(["described", link, _items()])
+		return true
+
+	func make_answer(link: int, _invite: Dictionary) -> bool:
+		var items := _items()
+		hub[items["fp"].hex_encode()] = [self, link]
+		queue.append(["described", link, items])
+		return true
+
+	func take_answer(link: int, answer: Dictionary) -> bool:
+		var other = hub.get(answer["fp"].hex_encode())
+		if other == null:
+			return false
+		peers[link] = other
+		other[0].peers[other[1]] = [self, link]
+		queue.append(["opened", link])
+		other[0].queue.append(["opened", other[1]])
+		return true
+
+	func send(link: int, text: String) -> bool:
+		if not peers.has(link):
+			return false
+		peers[link][0].queue.append(["received", peers[link][1], text])
+		return true
+
+	func drop(link: int) -> void:
+		if peers.has(link):
+			var other = peers[link]
+			peers.erase(link)
+			if other[0].peers.erase(other[1]):
+				other[0].queue.append(["closed", other[1]])
+
+	func poll() -> void:
+		var batch := queue
+		queue = []
+		for e in batch:
+			match e[0]:
+				"described":
+					described.emit(e[1], e[2])
+				"opened":
+					opened.emit(e[1])
+				"received":
+					if peers.has(e[1]):
+						received.emit(e[1], e[2])
+				"closed":
+					closed.emit(e[1])
 
 
 # 追補 1: 決めた並びの山札で配る卓。
@@ -71,10 +143,26 @@ class StubApp extends RefCounted:
 	var bgm
 	var overlay = null
 	var applied := 0
-	var labs := 0
+	var bridge = BrowserBridge.new()
+	var session = null
+	var renamed := ""
 
-	func open_lab() -> void:
-		labs += 1
+	# 対戦の画面のテスト用: 通信の代わり(LoopTransport)で部屋を作る。hub を 2 つの StubApp で共有すると、互いにつながる
+	var hub := {}
+
+	func set_player_name(text: String) -> bool:
+		renamed = text
+		return Codec.is_valid_name(text)
+
+	func make_session(is_host: bool):
+		session = Session.new(LoopTransport.new(hub), is_host, "HOST" if is_host else "GUEST")
+		return session
+
+	func close_session() -> void:
+		if session != null:
+			session.leave()
+			session.transport.peers.clear()
+			session = null
 
 	func _init(store, parent: Node) -> void:
 		save = store
@@ -978,8 +1066,8 @@ func test_play_screen_moves() -> String:
 	for l in [true, false]:
 		settings.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 		title.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
-	if err == "" and not title.versus.disabled:
-		err = "versus must stay disabled until Phase 7"
+	if err == "" and title.versus.disabled:
+		err = "versus must be open"
 	# 追補 1 §7.1: ブラックジャックとポーカーのボタンは押せて、main が知っている画面へ行く
 	var pages := []
 	title.page_pressed.connect(func(p: String): pages.append(p))
@@ -988,12 +1076,6 @@ func test_play_screen_moves() -> String:
 			b.pressed.emit()
 	if err == "" and (pages != ["blackjack", "poker"] or not Main.PAGES.has_all(pages)):
 		err = "title must open blackjack and poker: " + str(pages)
-	# 設定の「対戦の接続テスト」の「開く」は、実験の画面を開く(Phase 6 だけの入口)
-	for b in settings.rows.find_children("*", "Button", true, false):
-		if b.text == S.BTN_OPEN:
-			b.pressed.emit()
-	if err == "" and app.labs != 1:
-		err = "settings must open the connection test"
 	settings._store("fx", "lite")
 	if err == "" and (app.save.data["settings"]["fx"] != "lite" or app.applied != 1):
 		err = "settings must save and apply at once"
@@ -1749,60 +1831,389 @@ func test_js_bridge_only_in_bridge() -> String:
 	return ""
 
 
-# 実験の画面が、ブラウザの外でも両方の配置に組めて、読めない文字を貼られても落ちない。
-func test_net_lab_builds() -> String:
+# ---- 対戦(Phase 7) ----
+
+func _vs_row(id: int, score: int, last: bool) -> Dictionary:
+	var row := {"id": id, "round": 1, "score": score, "pot": 250, "lives": 3, "streak": 2, "draws": 9, "ended": "gameover" if last else ""}
+	if last:
+		row["best_streak"] = 5
+	return row
+
+
+# AC-33: 9 種類の正しいメッセージが検査を通り、形の崩れた物は落ちる。
+func test_net_message() -> String:
+	var players := [{"id": 0, "name": "HOST"}, {"id": 1, "name": "AAA"}]
+	var results := [{"id": 0, "name": "HOST", "score": 5000, "cleared": true, "draws": 51, "best_streak": 12, "status": "ok"}]
+	var good := {
+		"hello": NetMsg.hello("AAA"), "lobby": NetMsg.lobby(players, 1), "start": NetMsg.start(NetMsg.make_seed(1700000000, 123456, 1), 180, 1),
+		"state": NetMsg.state(_vs_row(1, 500, false)), "final": NetMsg.state(_vs_row(1, 500, true)), "end": NetMsg.end(results),
+		"ping": NetMsg.ping(3), "pong": NetMsg.pong(3), "bye": NetMsg.bye("leave"),
+	}
+	for t in good:
+		var m := NetMsg.parse(good[t], 1)
+		if m.get("t") != t:
+			return "a good %s must pass: %s" % [t, good[t]]
+	var st := NetMsg.parse(good["final"], 1)
+	if st != {"t": "final", "id": 1, "round": 1, "score": 500, "pot": 250, "lives": 3, "streak": 2, "draws": 9, "ended": "gameover", "best_streak": 5}:
+		return "parsed final: " + str(st)
+	if typeof(st["score"]) != TYPE_INT or NetMsg.parse(NetMsg.state(_vs_row(1, 0, false)).replace("\"lives\":3", "\"lives\":4"), 1).get("lives") != 4:
+		return "numbers must come back as int, and 4 lives is a valid value"
+	# 形の崩れた物。state の 1 項目だけを替えて確かめる
+	var base := _vs_row(1, 500, false)
+	var bad := ["", "not json", "[1,2]", "{}", JSON.stringify({"t": "dance"}), JSON.stringify({"t": 5}), NetMsg.hello("ABCDEFGHI"), NetMsg.hello(""),
+		NetMsg.hello("A\nB"), NetMsg.bye("because"), NetMsg.start("LLV:1:2:1", 181, 1), NetMsg.start("LLV:1:2:1\n", 180, 1), NetMsg.start("XX:1", 180, 1),
+		NetMsg.lobby([], 0), NetMsg.lobby([{"id": 4, "name": "A"}], 0), JSON.stringify({"t": "ping", "n": "3"}),
+		JSON.stringify({"t": "hello", "v": 1, "name": "A", "pad": "x".repeat(B.NET_MSG_MAX)})]
+	for change in [["score", -1], ["score", 100000000], ["score", "5"], ["lives", 5], ["lives", -1], ["streak", 52], ["draws", 52], ["id", 4], ["round", 2], ["ended", "won"], ["pot", null]]:
+		var row := base.duplicate()
+		row[change[0]] = change[1]
+		bad.append(NetMsg.state(row))
+	bad.append(JSON.stringify({"t": "state", "id": 1, "round": 1, "score": 500}))
+	for text in bad:
+		if not NetMsg.parse(text, 1).is_empty():
+			return "a bad message must be dropped: " + text.left(80)
+	# 小数の得点、対戦の外(round 0)での state も落ちる
+	if not NetMsg.parse(good["state"].replace("\"score\":500", "\"score\":500.5"), 1).is_empty() or not NetMsg.parse(good["state"], 0).is_empty():
+		return "a fractional score and a state outside a match must be dropped"
+	return ""
+
+
+# AC-34: 順位(同点は同じ順位)、final が無い人・切れた人の扱い、ポットが得点に入らないこと。
+func test_versus_state() -> String:
+	var vs = VersusState.new()
+	vs.set_lobby([{"id": 0, "name": "H"}, {"id": 1, "name": "A"}, {"id": 2, "name": "B"}, {"id": 3, "name": "C"}], 0)
+	vs.begin("LLV:1:2:1", 180, 1)
+	vs.set_own(_vs_row(0, 5000, true))
+	if not vs.apply_row(_vs_row(1, 5000, true)) or not vs.apply_row(_vs_row(2, 3000, false)) or not vs.apply_row(_vs_row(3, 0, false)):
+		return "rows from rivals must be applied"
+	if vs.apply_row(_vs_row(0, 9, false)) or vs.apply_row(_vs_row(1, 9, false)) or vs.players[0]["score"] != 5000 or vs.players[1]["score"] != 5000:
+		return "a rival must not change my row, and a row after the final must be ignored"
+	if vs.all_done():
+		return "two players are still playing"
+	vs.drop(3)
+	var res: Array = vs.results()
+	if VersusState.ranks(res) != [1, 1, 3, 4]:
+		return "ranks: " + str(VersusState.ranks(res))
+	if res.map(func(r): return r["status"]) != ["ok", "ok", "timeout", "disconnected"] or res[2]["score"] != 3000:
+		return "statuses: " + str(res)
+	if VersusState.solo_first(res, 0) or not VersusState.solo_first([res[0], res[2]], 0) or VersusState.solo_first(res, 2) or vs.connected_count() != 3:
+		return "a tied first place is not a solo first"
+	if vs.remaining_ms(1000, 1000) != 180000 or vs.remaining_ms(1000, 181500) != 0 or vs.remaining_ms(1000, 61000) != 120000:
+		return "remaining time"
+	vs.begin("LLV:1:2:2", 0, 2)
+	if vs.players.size() != 3 or vs.players[1]["score"] != 0 or vs.players[1]["final"] or vs.remaining_ms(1, 999999) != -1:
+		return "a rematch drops the gone player and resets the rest"
+	return ""
+
+
+# AC-35: ホスト 1・ゲスト 2 の通しを、通信を使わない代わりの通信で確かめる。
+func test_versus_session() -> String:
+	var hub := {}
+	var host = Session.new(LoopTransport.new(hub), true, "HOST")
+	var a = Session.new(LoopTransport.new(hub), false, "AAA")
+	var b = Session.new(LoopTransport.new(hub), false, "BBB")
+	var all := [host, a, b]
+	var clock := [1000]
+	var pump := func(ms: int):
+		clock[0] += ms
+		for i in 4:
+			for s in all:
+				s.tick(clock[0])
+	var got := {"answers": {}, "ended": {}, "started": 0}
+	a.answer_ready.connect(func(code): got["answers"]["a"] = code)
+	b.answer_ready.connect(func(code): got["answers"]["b"] = code)
+	for s in all:
+		s.started.connect(func(_seed, _sec, _round): got["started"] += 1)
+		s.ended.connect((func(results, who): got["ended"][who] = results).bind(s.my_name))
+	if host.start(180, 1700000000, 5) or not host.open_seat(1) or not host.open_seat(2):
+		return "a host cannot start alone, and can open seats"
+	pump.call(10)
+	if host.seats[1]["state"] != "inviting" or host.seats[1]["code"] == "" or host.seats[1]["code"] == host.seats[2]["code"]:
+		return "each seat gets its own invite"
+	if a.join("https://example.github.io/luck-ladder/?j=" + host.seats[1]["code"]) != "" or b.join(host.seats[2]["code"]) != "" or a.join("junk") != "bad":
+		return "guests must be able to join from an invite"
+	if a.join("?j=" + host.seats[1]["code"]) != "":
+		return "joining again must work"
+	pump.call(10)
+	if host.take_answer_text(host.seats[1]["code"]) != "kind" or host.take_answer_text("junk") != "bad":
+		return "an invite in the answer slot must be told apart (E-24), junk must be refused (E-25)"
+	if host.take_answer_text("?a=" + got["answers"]["a"]) != "" or host.take_answer_text(got["answers"]["b"]) != "" or host.take_answer_text(got["answers"]["a"]) != "bad":
+		return "answers must reach their seats, once"
+	pump.call(10)
+	if host.seats[1]["name"] != "AAA" or host.seats[2]["state"] != "connected" or not a.joined or a.vs.my_id != 1 or b.vs.my_id != 2 or b.vs.players.size() != 3 or b.vs.players[1]["name"] != "AAA":
+		return "hello and lobby: " + str(host.seats)
+	if not host.start(180, 1700000000, 5) or host.start(180, 1700000000, 5):
+		return "start must work once (E-37)"
+	pump.call(10)
+	var top := Deck.shuffled(host.vs.seed_text).slice(0, 10)
+	if got["started"] != 3 or not host.vs.seed_text.begins_with("LLV:") or Deck.shuffled(a.vs.seed_text).slice(0, 10) != top or Deck.shuffled(b.vs.seed_text).slice(0, 10) != top or a.vs.match_sec != 180:
+		return "all three must start from the same seed"
+	for s in all:
+		s.begin_play()
+	a.report(_vs_row(1, 500, false))
+	pump.call(10)
+	if host.vs.players[1]["score"] != 500 or b.vs.players[1]["score"] != 500 or a.vs.players[1]["score"] != 500:
+		return "a state must reach the host and the other guest"
+	# 席の番号を偽っても、ホストが送り主の席の番号に書き換える
+	a.transport.send(0, NetMsg.state(_vs_row(2, 700, false)))
+	host.report(_vs_row(0, 900, false))
+	pump.call(10)
+	if host.vs.players[1]["score"] != 700 or b.vs.players[1]["score"] != 700 or b.vs.players[2]["score"] != 0 or a.vs.players[0]["score"] != 900:
+		return "the host must rewrite the id of a relayed state"
+	# 1 秒に 21 通送ると切られる
+	for i in 21:
+		a.transport.send(0, NetMsg.ping(i))
+	pump.call(10)
+	if host.seats[1]["state"] != "empty" or not host.vs.players[1]["gone"] or not a.host_gone or host.connected_links() != [2]:
+		return "a flooding guest must be cut"
+	if not got["ended"].is_empty():
+		return "the match must still be running"
+	# ゲストが切れても、残りの全員が終えれば end が出る。切れたゲストは、自分が終えた時点で手元の値で結果を出す
+	host.report(_vs_row(0, 900, true))
+	b.report(_vs_row(2, 1200, true))
+	a.report(_vs_row(1, 700, true))
+	pump.call(10)
+	if not got["ended"].has("HOST") or not got["ended"].has("BBB") or not got["ended"].has("AAA") or host.phase != "ended":
+		return "end must come out for everyone: " + str(got["ended"].keys())
+	var res: Array = got["ended"]["BBB"]
+	if res.map(func(r): return [r["id"], r["score"], r["status"]]) != [[0, 900, "ok"], [1, 700, "disconnected"], [2, 1200, "ok"]] or VersusState.ranks(res) != [2, 3, 1]:
+		return "results: " + str(res)
+	# 「もう一戦」は、残った 2 人で始まる
+	if not host.start(0, 1700000100, 6):
+		return "a rematch must start"
+	pump.call(10)
+	if b.vs.round_no != 2 or b.vs.players.size() != 2 or host.vs.players.size() != 2 or b.phase != "playing":
+		return "a rematch runs with the players that are left"
+	# 何も届かない相手は NET_SILENT_SEC で切断にする(ここでは b の時計だけを止める)
+	all = [host]
+	pump.call(B.NET_SILENT_SEC * 1000 + 100)
+	if host.connected_links() != [] or not host.vs.players[2]["gone"]:
+		return "a silent guest must be marked as gone"
+	# 代わりの通信は互いを指し合うので、ほどいてから終える
+	for s in [host, a, b]:
+		s.transport.peers.clear()
+	hub.clear()
+	return ""
+
+
+# 期限: 招待は INVITE_TTL_SEC で切れ、返事を渡してから 20 秒つながらなければ失敗にする(FR-39・E-26)。
+func test_versus_seat_expiry() -> String:
+	var hub := {}
+	var host = Session.new(LoopTransport.new(hub), true, "HOST")
+	host.tick(1000)
+	host.open_seat(1)
+	host.tick(1010)
+	host.tick(1010 + B.INVITE_TTL_SEC * 1000)
+	if host.seats[1]["state"] != "inviting":
+		return "an invite lives for INVITE_TTL_SEC"
+	host.tick(1011 + B.INVITE_TTL_SEC * 1000 + 1)
+	if host.seats[1]["state"] != "expired" or host.seats[1]["code"] != "":
+		return "an invite must expire: " + str(host.seats[1])
+	hub.clear()
+	return ""
+
+
+# 部屋の画面(FR-35〜FR-40・FR-47): ホストが席の招待を作り、ゲストが招待から返事を作り、返事を渡すとつながる。両方の配置に組める。
+func test_room_screen() -> String:
 	Tokens.apply_settings({})
-	var app := StubApp.new(_fresh_store(), root)
-	var bridge = BrowserBridge.new()
-	if bridge.url_query() != "" or bridge.can_read_clipboard() or bridge.can_share() or bridge.can_broadcast() or bridge.send_answer("x"):
-		return "outside a browser the bridge must report that nothing is available"
-	var lab = NetLab.new()
-	lab.setup(app, bridge, "?lab=1")
-	root.add_child(lab)
-	for l in [true, false]:
-		lab.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+	var hub := {}
+	var ha := StubApp.new(_fresh_store(), root)
+	var ga := StubApp.new(_fresh_store("user://ll_test_save_2.json"), root)
+	ha.hub = hub
+	ga.hub = hub
+	var host_room = RoomScreen.new()
+	host_room.setup(ha, "choose")
+	root.add_child(host_room)
+	var guest_room = RoomScreen.new()
 	var err := ""
-	# 初めは「招待を作る」だけが出て、つながったかの表示は「まだ」。招待を作る側は、名前と IPv6 が初めから入
-	if lab.verdict.text != S.LAB_VERDICT_NO or not lab.make_button.visible or lab.url_box.visible or lab.copy_button.visible or lab.ping_button.visible or lab.detail.visible:
-		err = "the first view must show only the invite button"
-	var guest = NetLab.new()
-	guest.setup(app, bridge, "?j=abc&v6=1")
-	if err == "" and (not lab.with_mdns or not lab.with_v6 or guest.with_mdns or not guest.with_v6):
-		err = "a host starts with both switches on, a guest follows the invite"
-	guest.free()
-	# 届いたら ○ と「送る試験」、失敗したら × と「招待を作る」
-	lab._on_received(JSON.stringify({"t": "hello"}))
-	if err == "" and (lab.verdict.text != S.LAB_VERDICT_OK or not lab.ping_button.visible or lab.copy_button.visible):
-		err = "a hello must show the connected view"
-	# つながっている間は、押すと接続が切れる「招待を作る」を出さない
-	if err == "" and lab.make_button.visible:
-		err = "the invite button must be hidden while connected"
-	lab._fail(S.LAB_TIMEOUT, "connect_timeout")
-	if err == "" and (lab.verdict.text != S.LAB_VERDICT_FAIL or lab.ping_button.visible or not lab.make_button.visible):
-		err = "a failure must show the failed view"
-	lab._take_text("not a code", "box")
-	if lab.status.text != S.NET_UNREADABLE or lab.rtc != null:
-		err = "junk text must be refused without starting a connection"
-	var v2 := _code_body(Invite.encode(_invite_items(Invite.KIND_INVITE, 1, false)))
-	v2[0] = 0x21
-	lab._take_text("https://example.github.io/luck-ladder/?j=" + Invite.pack(v2), "box")
-	if err == "" and lab.status.text != S.NET_VERSION:
-		err = "a code of another version must say so"
-	# 招待を作っていないのに返事が来た(E-25)
-	lab._take_text(Invite.encode(_invite_items(Invite.KIND_ANSWER, 1, false)), "box")
-	if err == "" and (lab.status.text != S.NET_UNREADABLE or lab.rtc != null):
-		err = "an answer without an invite must be refused"
-	# つながる前の「送る試験」は始まらず、つながっていないと出る
-	lab._start_ping()
-	if err == "" and (lab.status.text != S.LAB_NOT_CONNECTED or lab.ping_sent != -1):
-		err = "the ping test must not start before the connection is open"
-	bridge.read_clipboard()
-	if err == "" and lab.status.text != S.NET_PASTE_FAILED:
-		err = "a refused clipboard must show the fallback line"
-	if err == "" and lab._mask("candidate:1 1 udp 1 203.0.113.9 61000 typ srflx raddr 192.168.1.5 rport 54400").contains("203") :
-		err = "the record must hide addresses"
-	lab.free()
-	app.free_nodes()
+	var texts := func(room) -> Array:
+		return room.box.find_children("*", "Label", true, false).map(func(l): return l.text) + room.box.find_children("*", "Button", true, false).map(func(b): return b.text)
+	var tick := func():
+		for i in 4:
+			for app in [ha, ga]:
+				if app.session != null:
+					app.session.tick(Time.get_ticks_msec())
+		host_room._rebuild()
+		if guest_room.is_inside_tree():
+			guest_room._rebuild()
+	if not S.ROOM_MAKE in texts.call(host_room) or not S.ROOM_JOIN in texts.call(host_room) or not S.ROOM_IP_NOTE in texts.call(host_room):
+		err = "the first view must offer to make a room or to join, with the address note"
+	host_room._make_room()
+	tick.call()
+	if err == "" and (host_room.mode != "host" or ha.session == null or not ha.session.is_host or texts.call(host_room).count(S.ROOM_INVITE_MAKE) != 3):
+		err = "a host room must show three empty seats"
+	var start_button := func(): return host_room.box.find_children("*", "Button", true, false).filter(func(b): return b.text == S.ROOM_START)[0]
+	if err == "" and not start_button.call().disabled:
+		err = "start must be disabled until a guest is connected"
+	ha.session.open_seat(1)
+	tick.call()
+	var url_boxes: Array = host_room.box.find_children("*", "TextEdit", true, false)
+	if err == "" and (url_boxes.size() != 1 or not url_boxes[0].text.contains("?j=" + ha.session.seats[1]["code"]) or not S.ROOM_INVITE_COPY in texts.call(host_room)):
+		err = "an open seat must show its invite URL"
+	# ゲスト: 招待 URL から来て「参加する」
+	guest_room.setup(ga, "invited", "?j=" + ha.session.seats[1]["code"])
+	root.add_child(guest_room)
+	if err == "" and (not S.ROOM_JOIN_GO in texts.call(guest_room) or not S.ROOM_IP_NOTE in texts.call(guest_room)):
+		err = "an invited guest must see the join button and the address note"
+	guest_room._join(guest_room.query)
+	tick.call()
+	if err == "" and (guest_room.mode != "guest" or guest_room.answer_code == "" or not S.ROOM_ANSWER_COPY in texts.call(guest_room)):
+		err = "joining must produce an answer URL"
+	# 招待を返事の欄に貼ると、取り違えと分かる(E-24)。読めない文字は断る(E-25)
+	host_room._on_answer_text("?j=" + ha.session.seats[1]["code"])
+	if err == "" and host_room.message != S.NET_IS_INVITE:
+		err = "an invite pasted as an answer must be told apart"
+	host_room._on_answer_text("junk")
+	if err == "" and host_room.message != S.NET_UNREADABLE:
+		err = "junk must be refused"
+	host_room._on_answer_text("https://example.github.io/luck-ladder/?a=" + guest_room.answer_code)
+	tick.call()
+	if err == "" and (ha.session.seats[1]["state"] != "connected" or not ga.session.joined or start_button.call().disabled or not S.ROOM_WAIT_START in texts.call(guest_room)):
+		err = "the answer must connect the seat: " + str(ha.session.seats[1]["state"])
+	if err == "" and not (S.ROOM_SEAT_CONNECTED % [2, "GUEST"]) in texts.call(host_room):
+		err = "the seat must show the name of the guest"
+	for l in [true, false]:
+		host_room.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+		guest_room.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+	# 貼り付けが使えないと、入力欄が出る(E-28)
+	host_room._on_clipboard(false, "")
+	host_room._rebuild()
+	if err == "" and (host_room.message != S.NET_PASTE_FAILED or host_room.paste_box == null):
+		err = "a refused clipboard must show the input box"
+	# 返事を渡すだけのタブ: ブラウザの外では渡せないので、「見つかりません」になる
+	var relay = RoomScreen.new()
+	relay.setup(ga, "relay", "?a=" + guest_room.answer_code)
+	root.add_child(relay)
+	relay._process(0.0)
+	if err == "" and relay.message != S.RELAY_LOST:
+		err = "a relay tab without a room must say so"
+	for r in [host_room, guest_room, relay]:
+		r.free()
+	for app in [ha, ga]:
+		app.close_session()
+		app.free_nodes()
+	hub.clear()
+	return err
+
+
+# 対戦の通し(FR-40〜FR-45・D-29・AC-36): 同じ山札で始まり、手ごとに相手の札が変わり、時間切れで締まり、ランが「対戦」として記録に載る。
+func test_versus_play() -> String:
+	Tokens.apply_settings({})
+	var hub := {}
+	var ha := StubApp.new(_fresh_store(), root)
+	var ga := StubApp.new(_fresh_store("user://ll_test_save_2.json"), root)
+	ha.hub = hub
+	ga.hub = hub
+	ha.sfx.set_volume(0)
+	ga.sfx.set_volume(0)
+	var host = ha.make_session(true)
+	var guest = ga.make_session(false)
+	var got := {"seed": "", "code": "", "host_end": [], "guest_end": []}
+	guest.answer_ready.connect(func(code): got["code"] = code)
+	host.started.connect(func(seed_value, _sec, _round): got["seed"] = seed_value)
+	host.ended.connect(func(results): got["host_end"] = results)
+	guest.ended.connect(func(results): got["guest_end"] = results)
+	# 部屋の時計は、起動からの時間に大きな数を足して進める(始めた時刻を過去にずらせるように)
+	var clock := func() -> int: return Time.get_ticks_msec() + 1000000
+	var tick := func():
+		for i in 4:
+			host.tick(clock.call())
+			guest.tick(clock.call())
+	host.open_seat(1)
+	tick.call()
+	guest.join(host.seats[1]["code"])
+	tick.call()
+	host.take_answer_text(got["code"])
+	tick.call()
+	if not host.start(120, 1700000000, 7):
+		return "the match must start"
+	tick.call()
+	var plays := []
+	for app in [ha, ga]:
+		var p = PlayScreen.new()
+		p.setup(app, RunState.new(got["seed"]), RunStats.new("versus"), "versus", "2026-11-13", false)
+		root.add_child(p)
+		p.relayout(true, Rect2(0, 0, 1280, 720))
+		plays.append(p)
+	var hp = plays[0]
+	var gp = plays[1]
+	var err := ""
+	if hp.rivals.size() != 1 or gp.rivals.size() != 1 or not hp.vs_locked:
+		err = "a versus play shows one rival chip and starts locked for the countdown"
+	hp._act("H", false)
+	if err == "" and hp.st.actions != "":
+		err = "moves must be ignored during the countdown"
+	for p in plays:
+		p.vs_start_ms = 0
+		p._process(0.0)
+	if err == "" and (hp.vs_locked or host.started_ms == 0 or guest.started_ms == 0 or hp.time_label.text != "2:00"):
+		err = "the countdown must end and the clock must start: " + hp.time_label.text
+	# 当たりそうな側を 1 手。相手の画面の札に、めくった枚数が届く
+	var side := "H" if hp.st.winners("H") >= hp.st.winners("L") else "L"
+	hp.last_input_frame = -1
+	hp._act(side, false)
+	hp._finish_all()
+	tick.call()
+	if err == "" and (hp.st.actions != side or gp.rivals[0].row.get("draws") != 1 or gp.rivals[0].status_text() != S.VS_DRAWS % 1):
+		err = "a move must reach the chip on the other screen"
+	if err == "" and (ha.save.data["current_run"] != null or ha.save.data["totals"]["runs"] != 0):
+		err = "a versus run must not be saved as the run in progress (D-29)"
+	for l in [false, true]:
+		for p in plays:
+			p.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+	if err == "" and (hp.card.size != PlayLayout.rects(true, true)["card"].size or PlayLayout.rects(false, true)["card"].size.y >= PlayLayout.rects(false)["card"].size.y):
+		err = "the versus layout must hold after turning, with a smaller card in portrait"
+	# 一時停止の代わりに「部屋を出ますか」。確かめの間は手を受けない
+	hp._toggle_pause()
+	hp.last_input_frame = -1
+	hp._act(side, false)
+	if err == "" and (hp.pause_layer == null or hp.st.actions != side):
+		err = "the leave prompt must block moves"
+	hp._toggle_pause()
+	# 時間切れ: 両方の時計を進めると、両方が final を送り、ホストが締める
+	host.started_ms = clock.call() - 121000
+	guest.started_ms = host.started_ms
+	tick.call()
+	for p in plays:
+		p._process(0.0)
+	tick.call()
+	if err == "" and (not hp.vs_final or not gp.vs_final or got["host_end"].size() != 2 or got["guest_end"].size() != 2 or not hp.wait_label.visible):
+		err = "time up must close the match: " + str(got["host_end"])
+	if err == "" and got["host_end"][0]["score"] != hp.st.score:
+		err = "the pot must not be counted at time up"
+	# main がすること: 実績の条件を入れて、ランを数える
+	hp.stats.versus_done = true
+	hp.stats.versus_players = host.vs.connected_count()
+	hp.stats.versus_solo_first = VersusState.solo_first(got["host_end"], 0)
+	var info: Dictionary = hp.close_versus()
+	var top: Array = ha.save.data["top_runs"]
+	if err == "" and (ha.save.data["totals"]["runs"] != 1 or top.is_empty() or top[0]["mode"] != "versus" or ha.save.data["current_run"] != null or not ha.save.data["achievements"].has("A-33")):
+		err = "a finished versus run must be recorded as versus (AC-36): " + str(top)
+	if err == "" and hp.close_versus() != info:
+		err = "closing twice must not count the run twice"
+	# INV-17: 保存データに、招待と返事のコードが入らない
+	var saved := JSON.stringify(ha.save.data)
+	if err == "" and (got["code"] == "" or saved.contains(got["code"])):
+		err = "codes must not be saved"
+	# 対戦の結果の画面
+	var vr = VersusResultScreen.new()
+	vr.setup(ha, got["host_end"], info)
+	root.add_child(vr)
+	for l in [true, false]:
+		vr.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+	if err == "" and (vr.my_rank < 1 or not vr.rematch.visible or vr.rematch.disabled or vr.wait_label.visible):
+		err = "the host must be offered a rematch"
+	vr._rematch()
+	tick.call()
+	if err == "" and (host.phase != "playing" or guest.phase != "playing" or host.round_no != 2):
+		err = "a rematch must start the next round"
+	vr.free()
+	for p in plays:
+		p.free()
+	for app in [ha, ga]:
+		app.close_session()
+		app.free_nodes()
+	hub.clear()
 	return err
 
 

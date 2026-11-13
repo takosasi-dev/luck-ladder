@@ -23,6 +23,11 @@ const LifePips := preload("res://ui/parts/life_pips.gd")
 const VolumeRow := preload("res://ui/parts/volume_row.gd")
 const Toast := preload("res://ui/parts/toast.gd")
 const Fx := preload("res://ui/fx/fx.gd")
+const VersusState := preload("res://core/versus_state.gd")
+const RivalChip := preload("res://ui/parts/rival_chip.gd")
+
+# 対戦の秒読み(§9.15: 3 秒)
+const COUNTDOWN_MS := 3000
 
 const SIDE_KEYS := {KEY_UP: "H", KEY_W: "H", KEY_DOWN: "L", KEY_S: "L", KEY_RIGHT: "S", KEY_D: "S", KEY_SPACE: "B"}
 const SIDE_BTN := {"H": "high", "L": "low", "S": "same", "B": "bank"}
@@ -74,6 +79,19 @@ var end_result := {}
 var done := false
 var shown := {"score": 0.0, "pot": 0.0}
 var swipe_from := Vector2.INF
+# 対戦のときだけ(FR-41〜FR-45)。vs は部屋(net/versus_session.gd)
+var vs
+var time_label: Label
+var rival_box: Control
+var rivals := {}
+var count_label: Label
+var wait_label: Label
+var vs_start_ms := 0
+# 秒読みの間と、自分の final を送った後は、手を受けない
+var vs_locked := false
+var vs_final := false
+var vs_soon := false
+var vs_count := 0
 
 
 func setup(app_ref, state, run_stats, mode_value: String, run_date: String, tutorial: bool) -> void:
@@ -92,6 +110,8 @@ func setup(app_ref, state, run_stats, mode_value: String, run_date: String, tuto
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build()
+	if mode == "versus":
+		_build_versus()
 	if tut_step == 0:
 		tut_step = 1
 	_snap()
@@ -176,15 +196,15 @@ func relayout(is_landscape: bool, view_rect: Rect2) -> void:
 	view = view_rect
 	size = Layout.size(landscape)
 	counter_on = bool(save.data["settings"]["counter"])
-	var r := Layout.rects(landscape)
-	var o := Layout.over(landscape)
+	var r := Layout.rects(landscape, mode == "versus")
+	var o := Layout.over(landscape, mode == "versus")
 	Kit.place(pause_face, r["pause"])
 	pause_face.get_child(0).size = r["pause"].size
 	Kit.place(pause_hit, o["pause_hit"])
 	var sc: Rect2 = r["score"]
 	Kit.place(score_label, Rect2(sc.position, Vector2(64, sc.size.y)))
 	Kit.place(score_num, Rect2(sc.position + Vector2(72, 0), sc.size - Vector2(72, 0)))
-	mode_label.visible = r.has("mode")
+	mode_label.visible = r.has("mode") and mode != "versus"
 	if r.has("mode"):
 		Kit.place(mode_label, r["mode"])
 	Kit.place(pips, r["lives"])
@@ -206,6 +226,8 @@ func relayout(is_landscape: bool, view_rect: Rect2) -> void:
 	Kit.place(fx, Rect2(Vector2.ZERO, size))
 	Kit.place(toast, o["toast"])
 	Kit.place(fade, view)
+	if mode == "versus":
+		_layout_versus(r)
 	_show_tutorial()
 	if pause_layer != null:
 		_open_pause()
@@ -255,8 +277,8 @@ func _show_tutorial() -> void:
 	if not on:
 		return
 	tut.text = TUT_TEXTS[tut_step]
-	Kit.place(tut, Layout.over(landscape)["tut%d" % tut_step])
-	var r := Layout.rects(landscape)
+	Kit.place(tut, Layout.over(landscape, mode == "versus")["tut%d" % tut_step])
+	var r := Layout.rects(landscape, mode == "versus")
 	hl_tw = create_tween()
 	for key in TUT_TARGETS[tut_step]:
 		var f: Panel = hl_frames[key]
@@ -317,7 +339,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _act(side: String, show_press: bool) -> void:
-	if done or pause_layer != null or app.overlay != null:
+	if done or pause_layer != null or app.overlay != null or vs_locked or vs_final:
 		return
 	# E-4: 同じフレームに届いた 2 つ目からは捨てる
 	var f := Engine.get_process_frames()
@@ -343,14 +365,22 @@ func _act(side: String, show_press: bool) -> void:
 	else:
 		stats.on_guess(res, st)
 	if st.ended == "":
-		save.save_current(mode, st.seed_text, date, st.actions, stats.counter_shown)
+		# 対戦は途中の保存をしない(D-29)
+		if mode != "versus":
+			save.save_current(mode, st.seed_text, date, st.actions, stats.counter_shown)
 		# FR-17: 条件を満たした手の直後に達成にして、通知を出す
 		var fresh: Array = save.judge_move(stats, date)
 		run_ach.append_array(fresh)
 		for id in fresh:
 			toast.push(S.ACHIEVEMENTS[id][0])
-	else:
+	elif mode != "versus":
 		_finish_run()
+	if mode == "versus":
+		# FR-41: 自分の手のたびに、自分の状態を送る。ランが終わったら final
+		if st.ended != "":
+			_versus_final(false)
+		else:
+			vs.report(VersusState.row_from_run(st, stats, 0, vs.round_no, false))
 	_advance_tutorial()
 	if side == "B":
 		_animate_bank(res)
@@ -373,7 +403,7 @@ func _animate_flip(res: Dictionary) -> void:
 	app.sfx.play("flip")
 	deck.set_left(st.remaining())
 	deck_label.text = S.DECK_LEFT % st.remaining()
-	var r := Layout.rects(landscape)
+	var r := Layout.rects(landscape, mode == "versus")
 	flip_tw = create_tween()
 	if T.lite:
 		# FR-29: 控えめでは 0.12 秒の入れ替え
@@ -433,8 +463,8 @@ func _on_flip_done(res: Dictionary) -> void:
 	incoming.visible = false
 	card.scale.x = 1.0
 	_refresh()
-	var r := Layout.rects(landscape)
-	var callout_at: Rect2 = Layout.over(landscape)["callout"]
+	var r := Layout.rects(landscape, mode == "versus")
+	var callout_at: Rect2 = Layout.over(landscape, mode == "versus")["callout"]
 	var card_c: Vector2 = r["card"].get_center()
 	var pot_c := pot_num.position + pot_num.size / 2
 	var tw := _new_post()
@@ -475,8 +505,10 @@ func _on_flip_done(res: Dictionary) -> void:
 		tw.parallel().tween_callback(_emit_finished).set_delay(T.CLEAR_WAIT)
 	elif st.ended == "gameover":
 		app.sfx.play("gameover")
-		tw.parallel().tween_property(fade, "color:a", 1.0, T.END_FADE).set_delay(T.END_FADE)
-		tw.parallel().tween_callback(_emit_finished).set_delay(T.END_FADE * 2)
+		# 対戦では、結果が出るまで相手の札を見て待つので、暗くしない
+		if mode != "versus":
+			tw.parallel().tween_property(fade, "color:a", 1.0, T.END_FADE).set_delay(T.END_FADE)
+			tw.parallel().tween_callback(_emit_finished).set_delay(T.END_FADE * 2)
 
 
 func _animate_bank(res: Dictionary) -> void:
@@ -487,7 +519,7 @@ func _animate_bank(res: Dictionary) -> void:
 	var text := ShareText.group(res["amount"])
 	fx.fly_text(tw, text, pot_c, score_c, T.t(T.BANK_FLY), T.BRASS_HI, T.FS_POT, 70.0)
 	fx.burst(pot_c, T.SPARKS_BANK, T.t(T.BANK_SPARK))
-	fx.callout(S.CALL_BANK % text, T.BRASS_HI, Layout.over(landscape)["callout"])
+	fx.callout(S.CALL_BANK % text, T.BRASS_HI, Layout.over(landscape, mode == "versus")["callout"])
 	_set_shown(0, "pot")
 	_count("score", st.score, T.t(T.BANK_COUNT), T.t(T.BANK_FLY) * 0.8)
 	ladder.set_streak(0, tw, true)
@@ -495,7 +527,7 @@ func _animate_bank(res: Dictionary) -> void:
 
 
 func _emit_finished() -> void:
-	if done:
+	if done or mode == "versus":
 		return
 	done = true
 	finished.emit({"state": st, "stats": stats, "date": date, "mode": mode, "result": end_result, "new_achievements": run_ach + end_result["new_achievements"]})
@@ -504,7 +536,8 @@ func _emit_finished() -> void:
 # ---- 一時停止(FR-24・FR-33) ----
 
 func _toggle_pause() -> void:
-	if done or st.ended != "":
+	# FR-44: 対戦中は止められない。ランが終わって待っている間も、部屋を出る確かめは出せる
+	if done or (st.ended != "" and mode != "versus"):
 		return
 	if pause_layer != null:
 		pause_layer.queue_free()
@@ -525,8 +558,12 @@ func _open_pause() -> void:
 	pause_layer.add_child(scrim)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
-	box.add_child(Kit.label(S.PAUSED + "  " + _mode_text(), T.FS_HEAD, T.W_NUM))
-	for item in [[S.BTN_RESUME, "brass", _toggle_pause], [S.BTN_SETTINGS, "green", app.open_settings], [S.BTN_TO_TITLE, "green", func(): to_title.emit()]]:
+	var items := [[S.BTN_RESUME, "brass", _toggle_pause], [S.BTN_SETTINGS, "green", app.open_settings], [S.BTN_TO_TITLE, "green", func(): to_title.emit()]]
+	if mode == "versus":
+		# FR-44: 確かめの間も時間は進む
+		items = [[S.VS_STAY, "brass", _toggle_pause], [S.BTN_SETTINGS, "green", app.open_settings], [S.ROOM_LEAVE, "green", _leave_versus]]
+	box.add_child(Kit.label(S.VS_LEAVE_ASK if mode == "versus" else S.PAUSED + "  " + _mode_text(), T.FS_HEAD if mode != "versus" else T.FS_BODY, T.W_NUM))
+	for item in items:
 		var b := Kit.button(item[0], T.FS_BODY, item[1])
 		b.custom_minimum_size = Vector2(520, 96)
 		b.pressed.connect(item[2])
@@ -551,3 +588,112 @@ func _set_volume(key: String, v: int) -> void:
 	if key == "sfx_volume":
 		app.sfx.play("tap")
 
+
+# ---- 対戦(FR-41〜FR-45) ----
+
+func _build_versus() -> void:
+	vs = app.session
+	time_label = Kit.num_label("", T.FS_HEAD, T.TEXT)
+	add_child(time_label)
+	rival_box = Control.new()
+	rival_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(rival_box)
+	var ids: Array = vs.vs.players.keys()
+	ids.sort()
+	for id in ids:
+		if id != vs.vs.my_id:
+			var chip := RivalChip.new()
+			rival_box.add_child(chip)
+			rivals[id] = chip
+	vs.rivals_changed.connect(_refresh_rivals)
+	count_label = Kit.num_label("", T.FS_TITLE, T.BRASS_HI)
+	count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(count_label)
+	wait_label = Kit.label("", T.FS_BODY, T.W_NUM, T.BRASS_HI)
+	wait_label.add_theme_stylebox_override("normal", Kit.box(Color(T.BG_DEEP, 0.85), 18, Color(T.BRASS, 0.5), 1))
+	wait_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wait_label.visible = false
+	add_child(wait_label)
+	# 3 秒の秒読みの間は、手を受けない
+	vs_locked = true
+	vs_start_ms = Time.get_ticks_msec() + COUNTDOWN_MS
+	_refresh_rivals()
+
+
+func _layout_versus(r: Dictionary) -> void:
+	Kit.place(time_label, r["timer"])
+	var strip: Rect2 = r["rivals"]
+	Kit.place(rival_box, strip)
+	var n := maxi(rivals.size(), 1)
+	var w := (strip.size.x - 8 * (n - 1)) / n
+	var i := 0
+	for id in rivals:
+		Kit.place(rivals[id], Rect2(i * (w + 8), 0, w, strip.size.y))
+		i += 1
+	Kit.place(count_label, Rect2(0, size.y * 0.3, size.x, 140))
+	Kit.place(wait_label, r["pot"])
+
+
+func _refresh_rivals() -> void:
+	for id in rivals:
+		if vs.vs.players.has(id):
+			rivals[id].set_row(vs.vs.players[id])
+
+
+# 秒読みと残り時間。時間は、始めた時刻からの経過で数える(一時停止の確かめの間も、タブが裏に回っていた間も進む。FR-44・E-32)。
+@warning_ignore("integer_division")
+func _process(_delta: float) -> void:
+	if mode != "versus" or done:
+		return
+	if vs_locked:
+		var left := vs_start_ms - Time.get_ticks_msec()
+		if left > 0:
+			var n := (left + 999) / 1000
+			if n != vs_count:
+				vs_count = n
+				count_label.text = str(n)
+				app.sfx.play("tap")
+			return
+		vs_locked = false
+		count_label.visible = false
+		vs.begin_play()
+	var rem: int = vs.remaining_ms()
+	time_label.visible = rem >= 0
+	if rem < 0:
+		return
+	var sec := (rem + 999) / 1000
+	time_label.text = "%d:%02d" % [sec / 60, sec % 60]
+	time_label.add_theme_color_override("font_color", T.BAD if rem <= 30000 else T.TEXT)
+	if rem <= 30000 and not vs_soon:
+		vs_soon = true
+		fx.callout(S.VS_SOON, T.BAD, Layout.over(landscape, true)["callout"])
+	if rem == 0:
+		_versus_final(true)
+
+
+# 自分のランが終わった、または時間切れ。final を送って、対戦が締まるのを待つ(終わっていない人のポットは得点に入らない。FR-42)。
+func _versus_final(timeout: bool) -> void:
+	if vs_final:
+		return
+	vs_final = true
+	if timeout:
+		_finish_all()
+	vs.report(VersusState.row_from_run(st, stats, 0, vs.round_no, true))
+	wait_label.text = (S.VS_TIME_UP + "  " if timeout else "") + S.VS_WAIT_END
+	wait_label.visible = true
+
+
+# 対戦が締まった(main が呼ぶ)。自分のランを通算と実績に数える(D-29)。2 回目からは、同じ結果を返すだけ。
+func close_versus() -> Dictionary:
+	if not done:
+		_finish_all()
+		done = true
+		end_result = save.finish_run(stats, date, day_no)
+	return {"state": st, "stats": stats, "result": end_result, "new_achievements": run_ach + end_result["new_achievements"]}
+
+
+# 自分のランを終えてから出るなら、そのランは数える。途中で出たランは数えない。
+func _leave_versus() -> void:
+	if vs_final:
+		close_versus()
+	to_title.emit()

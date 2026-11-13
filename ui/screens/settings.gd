@@ -86,10 +86,12 @@ func _rebuild() -> void:
 	data.custom_minimum_size.x = 260
 	data.pressed.connect(func(): app.open_data())
 	_row(S.SET_DATA, [data])
-	# 接続の実験の画面への入口(Phase 6 だけの仮の物。Phase 7 で消す)
-	var lab := Kit.button(S.BTN_OPEN, T.FS_BODY, "ghost")
-	lab.pressed.connect(func(): app.open_lab())
-	_row(S.SET_LAB, [lab])
+	# FR-46: 対戦で相手に見える名前。字を打てない端末があるので、ブラウザの入力の小窓で変える
+	var rename := Kit.button(S.BTN_CHANGE, T.FS_BODY, "ghost")
+	rename.pressed.connect(func():
+		if app.set_player_name(app.bridge.prompt_text(S.ROOM_RENAME_ASK)):
+			_rebuild.call_deferred())
+	_row(S.SET_NAME + "  " + str(st["name"]), [rename])
 
 
 func _choice(title: String, options: Array, key: String) -> void:

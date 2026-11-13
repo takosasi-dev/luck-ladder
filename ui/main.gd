@@ -18,7 +18,12 @@ const Play := preload("res://ui/screens/play.gd")
 const Result := preload("res://ui/screens/result.gd")
 const Settings := preload("res://ui/screens/settings.gd")
 const SaveData := preload("res://ui/screens/save_data.gd")
-const NetLab := preload("res://ui/screens/net_lab.gd")
+const Room := preload("res://ui/screens/room.gd")
+const VersusResult := preload("res://ui/screens/versus_result.gd")
+const RtcTransport := preload("res://net/rtc_transport.gd")
+const Session := preload("res://net/versus_session.gd")
+const VersusState := preload("res://core/versus_state.gd")
+const SaveCodec := preload("res://core/save_codec.gd")
 const BrowserBridge := preload("res://net/browser_bridge.gd")
 const PAGES := {
 	"achievements": preload("res://ui/screens/achievements.gd"),
@@ -35,6 +40,8 @@ var save
 var sfx
 var bgm
 var bridge
+# 対戦の部屋(net/versus_session.gd)。部屋の画面からプレイ、対戦の結果まで持ち続ける
+var session
 var bg_shader: ColorRect
 var bg_plain: ColorRect
 var bg_gradient: Gradient
@@ -65,11 +72,13 @@ func _ready() -> void:
 	apply_settings()
 	# size_changed の中で content_scale_size を変えると、窓の側の計算が古い縦横比で上書きするので、後回しにする
 	get_tree().root.size_changed.connect(_on_window_resized, CONNECT_DEFERRED)
-	# Phase 6 の接続実験: URL に lab= か、招待(j=)・返事(a=)が付いて開かれたら、実験の画面を出す
+	# FR-35: 招待の URL(?j=)で開かれたら参加の画面、返事の URL(?a=)で開かれたら、部屋のタブへ渡すだけの画面を出す
 	bridge = BrowserBridge.new()
 	var query: String = bridge.url_query()
-	if RegEx.create_from_string("[?&](lab|j|a)=").search(query):
-		show_lab(query)
+	if RegEx.create_from_string("[?&]a=").search(query):
+		show_room("relay", query)
+	elif RegEx.create_from_string("[?&]j=").search(query):
+		show_room("invited", query)
 	else:
 		show_title()
 	_on_window_resized()
@@ -258,21 +267,81 @@ func show_title() -> void:
 	_swap(title)
 
 
-func show_lab(query: String) -> void:
-	var lab := NetLab.new()
-	lab.setup(self, bridge, query)
-	lab.back_pressed.connect(show_title)
-	_swap(lab)
+# ---- 対戦 ----
+
+func show_room(mode: String, query: String = "") -> void:
+	bgm.play("bgm_title")
+	var r := Room.new()
+	r.setup(self, mode, query)
+	r.back_pressed.connect(show_title)
+	_swap(r)
 
 
-# 設定の「対戦の接続テスト」から開く(招待を作る側として)。
-func open_lab() -> void:
-	show_lab("?lab=1")
+# 部屋を作る・参加する。前の部屋があれば閉じる。
+func make_session(is_host: bool):
+	close_session()
+	session = Session.new(RtcTransport.new(), is_host, str(save.data["settings"]["name"]))
+	session.started.connect(_on_versus_started)
+	session.ended.connect(_on_versus_ended)
+	return session
+
+
+func close_session() -> void:
+	if session != null:
+		session.leave()
+		session = null
+
+
+func _process(_delta: float) -> void:
+	if session != null:
+		session.tick(Time.get_ticks_msec())
+
+
+# FR-46: 名前を変えて保存する。部屋にいれば、相手にも伝える。
+func set_player_name(text: String) -> bool:
+	if not SaveCodec.is_valid_name(text):
+		return false
+	save.data["settings"]["name"] = text
+	save.write()
+	if session != null:
+		session.rename(text)
+	return true
+
+
+# FR-40: 種が届いたら、全員が同じ山札で始める。途中の保存はしない(D-29)。
+func _on_versus_started(seed_text: String, _match_sec: int, _round_no: int) -> void:
+	var p := Play.new()
+	p.setup(self, RunState.new(seed_text), RunStats.new("versus"), "versus", _today(), false)
+	p.to_title.connect(func():
+		close_session()
+		show_title())
+	_swap(p)
+
+
+# FR-42・FR-43: 対戦が締まった。自分のランを通算と実績に数え(D-29)、対戦の結果を出す。
+func _on_versus_ended(results: Array) -> void:
+	if not screen is Play or screen.mode != "versus":
+		return
+	var stats = screen.stats
+	stats.versus_done = true
+	stats.versus_players = session.vs.connected_count()
+	stats.versus_solo_first = VersusState.solo_first(results, session.vs.my_id)
+	var info: Dictionary = screen.close_versus()
+	bgm.play("bgm_title")
+	var r := VersusResult.new()
+	r.setup(self, results, info)
+	r.leave_pressed.connect(func():
+		close_session()
+		show_title())
+	_swap(r)
 
 
 func _open_page(page: String) -> void:
 	if page == "settings":
 		open_settings()
+		return
+	if page == "versus":
+		show_room("choose")
 		return
 	var p: Control = PAGES[page].new()
 	p.setup(self)

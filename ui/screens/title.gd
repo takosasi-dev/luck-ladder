@@ -72,9 +72,8 @@ func _ready() -> void:
 	row.add_theme_constant_override("separation", 10)
 	menu.add_child(row)
 	_button(daily, "green", _on_daily, short, row).size_flags_stretch_ratio = 2.0
-	# 対戦は Phase 7 で作るまで、押せないボタンとして出しておく(仕様書 §11 の Phase 5)
-	versus = _button(S.BTN_VERSUS + "  " + S.COMING_SOON, "ghost", func(): pass, short, row)
-	versus.disabled = true
+	# FR-35: 「部屋を作る」と「招待で参加」は、部屋の画面の初めに出す
+	versus = _button(S.BTN_VERSUS, "green", func(): page_pressed.emit("versus"), short, row)
 	# 追補 1 §7.1
 	_pair([[S.BTN_BJ, "blackjack"], [S.BTN_POKER, "poker"]], "green")
 	var ach := S.BTN_ACH + "  " + S.ACH_COUNT % [info.get("ach_done", 0), info.get("ach_total", 0)]

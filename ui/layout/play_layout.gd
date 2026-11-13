@@ -54,12 +54,38 @@ const PORTRAIT_OVER := {
 }
 
 
-static func rects(landscape: bool) -> Dictionary:
-	return LANDSCAPE if landscape else PORTRAIT
+# 対戦のときだけ変わる位置(画面設計書 §2.1・§2.2): 相手の札の帯と残り時間を足し、縦長では梯子と札を下げて小さくする。
+# 横長は、帯が札に掛からない高さに収まるので、札の大きさは変えていない。
+const VERSUS_LANDSCAPE := {
+	"rivals": Rect2(176, 60, 752, 44),
+	"timer": Rect2(540, 4, 330, 56),
+}
+const VERSUS_LANDSCAPE_OVER := {"callout": Rect2(176, 108, 752, 70)}
+const VERSUS_PORTRAIT := {
+	"rivals": Rect2(14, 98, 552, 62),
+	"timer": Rect2(576, 98, 130, 62),
+	"ladder": Rect2(14, 164, 692, 76),
+	"deck": Rect2(128, 284, 176, 246),
+	"deck_label": Rect2(128, 534, 176, 34),
+	"card": Rect2(372, 250, 220, 308),
+}
+const VERSUS_PORTRAIT_OVER := {"callout": Rect2(14, 244, 692, 70)}
 
 
-static func over(landscape: bool) -> Dictionary:
-	return LANDSCAPE_OVER if landscape else PORTRAIT_OVER
+static func _with(base: Dictionary, extra: Dictionary, versus: bool) -> Dictionary:
+	if not versus:
+		return base
+	var out := base.duplicate()
+	out.merge(extra, true)
+	return out
+
+
+static func rects(landscape: bool, versus: bool = false) -> Dictionary:
+	return _with(LANDSCAPE, VERSUS_LANDSCAPE, versus) if landscape else _with(PORTRAIT, VERSUS_PORTRAIT, versus)
+
+
+static func over(landscape: bool, versus: bool = false) -> Dictionary:
+	return _with(LANDSCAPE_OVER, VERSUS_LANDSCAPE_OVER, versus) if landscape else _with(PORTRAIT_OVER, VERSUS_PORTRAIT_OVER, versus)
 
 
 static func size(landscape: bool) -> Vector2:
