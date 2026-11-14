@@ -1,5 +1,10 @@
-# user://save.json の読み書きと、ラン終了時の記録(通算・上位ラン・今日の山札・実績)。
+# 保存の読み書きと、ラン終了時の記録(通算・上位ラン・今日の山札・実績)。
 # 検査と既定値は core/save_codec.gd、実績の判定は core/achievements.gd に任せる。
+# 置き場: Web はブラウザの localStorage(キー luck-ladder/save)、それ以外は user://save.json。
+# Web で user:// に書かないのは、user:// の実体(IndexedDB の /userfs)が同じサイトの Godot のゲーム全部で 1 つで、
+# 書くたびに、そのタブが起動した時の写しで全体を書き戻すから(別のタブ・別のゲームの新しい保存が古い物に戻る・消える)。
+# localStorage に無い時だけ v0.6.0 までの user://save.json を読み、すぐ localStorage へ移す。
+# 同じゲームの 2 つのタブとは、後から書いた方が残る(書く前の読み直しはしない)。
 extends RefCounted
 
 const B := preload("res://core/balance.gd")
@@ -7,13 +12,17 @@ const Codec := preload("res://core/save_codec.gd")
 const Ach := preload("res://core/achievements.gd")
 const Progress := preload("res://core/progress.gd")
 const DayIndex := preload("res://core/day_index.gd")
+const Bridge := preload("res://net/browser_bridge.gd")
 
 const DEFAULT_PATH := "user://save.json"
+const WEB_KEY_PREFIX := "luck-ladder/"
 
 var path := DEFAULT_PATH
 var data: Dictionary = {}
 # 最後の書き込みが通ったか(E-6: 偽なら設定画面に「記録が残りません」を出す)
 var writable := true
+# 真なら localStorage に読み書きする(テストは偽の置き場で真にする)
+var web := Bridge.on_web()
 
 
 func _init(file_path: String = DEFAULT_PATH) -> void:
@@ -22,11 +31,14 @@ func _init(file_path: String = DEFAULT_PATH) -> void:
 
 
 func load_file() -> void:
-	if not FileAccess.file_exists(path):
+	var text = _web_get(_web_key(path)) if web else null
+	var migrate: bool = web and text == null
+	if text == null and FileAccess.file_exists(path):
+		text = FileAccess.get_file_as_string(path)
+	if text == null:
 		data = Codec.defaults(Codec.default_name(randi_range(0, 99)))
 		write()
 		return
-	var text := FileAccess.get_file_as_string(path)
 	var json := JSON.new()
 	var raw = json.data if json.parse(text) == OK else null
 	var res := Codec.sanitize(raw)
@@ -35,11 +47,27 @@ func load_file() -> void:
 		# E-7: 壊れた中身を上書きする前に 1 つだけ写す
 		_write_to(path.get_basename() + ".broken.json", text)
 		data["settings"]["name"] = Codec.default_name(randi_range(0, 99))
+	if res["broken"] or migrate:
 		write()
+
+
+# user://save.json → luck-ladder/save、user://save.broken.json → luck-ladder/save.broken
+static func _web_key(file_path: String) -> String:
+	return WEB_KEY_PREFIX + file_path.get_file().get_basename()
+
+
+func _web_get(key: String):
+	return Bridge.storage_get(key)
+
+
+func _web_set(key: String, text: String) -> bool:
+	return Bridge.storage_set(key, text)
 
 
 # テストでは書けない保存先の代わりに、これを差し替える(AC-28)。
 func _write_to(file_path: String, text: String) -> bool:
+	if web:
+		return _web_set(_web_key(file_path), text)
 	var f := FileAccess.open(file_path, FileAccess.WRITE)
 	if f == null:
 		return false

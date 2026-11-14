@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-14
+
+### Fixed
+
+- 同じサイト(takosasi-dev.github.io)のほかのゲームや、もう 1 つの LuckLadder をほかのタブで開いていると、記録(通算・上位ラン・今日の山札・実績・持ち点・設定)が古い物に戻ったり消えたりすることがあった。逆に、LuckLadder が保存すると、ほかのゲームの保存を戻したり消したりすることもあった。保存の置き場を、このゲームだけのキーの localStorage に移した。v0.6.0 までの記録は、この版を最初に開いた時に引き継ぐ
+
 ## [0.6.0] - 2026-11-13
 
 押し間違いの受け止めと、初めて遊ぶ人向けの説明です。
@@ -145,6 +151,7 @@
 - スマホの実機では、まだ確かめていません
 - 調整値は、人に遊んでもらって決めた値ではありません
 
+[0.6.1]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.6.1
 [0.6.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.6.0
 [0.5.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.5.0
 [0.4.0]: https://github.com/takosasi-dev/luck-ladder/releases/tag/v0.4.0

@@ -56,6 +56,18 @@ class FailStore extends SaveStore:
 		return false
 
 
+# Web の保存の置き場(localStorage)の代わり。キー → 文字。
+class WebStore extends SaveStore:
+	var box := {}
+
+	func _web_get(key: String):
+		return box.get(key)
+
+	func _web_set(key: String, text: String) -> bool:
+		box[key] = text
+		return true
+
+
 # AC-35: 通信を使わない代わりの通信。同じ処理の中で、指紋を合言葉にして相手を見つけ、poll のたびに届ける。
 # hub は {"n": 作った接続の数, 指紋の 16 進: [transport, link]} を、つなぐ者どうしで共有する。
 class LoopTransport extends Transport:
@@ -897,6 +909,69 @@ func test_unwritable_store() -> String:
 	if store.data["totals"]["runs"] != 1 or not "A-01" in res["new_achievements"]:
 		return "records must stay in memory"
 	return ""
+
+
+# Web では localStorage(luck-ladder/ + ファイル名)に読み書きし、user:// には書かない(user:// は同じサイトのゲーム全部で 1 つ)。
+# localStorage に無い時だけ、v0.6.0 までの user:// の保存を読んで、すぐ移す。
+func test_web_store() -> String:
+	var old = _fresh_store()
+	old.data["totals"]["runs"] = 7
+	old.write()
+	var file_text := FileAccess.get_file_as_string(TEST_SAVE)
+	var s := WebStore.new(TEST_SAVE)
+	s.web = true
+	s.load_file()
+	var key := "luck-ladder/ll_test_save"
+	if s.data["totals"]["runs"] != 7 or not s.box.has(key) or JSON.parse_string(s.box[key])["totals"]["runs"] != 7:
+		return "the old user:// save must move to the storage: " + str(s.box.keys())
+	s.save_current("run", "LLR:1:2", "2026-11-11", "H", true)
+	s.data["totals"]["runs"] = 9
+	s.write()
+	if FileAccess.get_file_as_string(TEST_SAVE) != file_text:
+		return "must not write user://"
+	s.load_file()
+	if s.data["totals"]["runs"] != 9 or s.current("run") == null:
+		return "the storage must win over the old file"
+	# 壊れていたら、写しを別のキーに置いて既定値で始める(E-7)
+	s.box[key] = "{broken"
+	s.load_file()
+	if s.box.get(key + ".broken") != "{broken" or s.data["totals"]["runs"] != 0 or JSON.parse_string(s.box[key]) == null:
+		return "broken storage: " + str(s.box)
+	if FileAccess.get_file_as_string(TEST_SAVE) != file_text or FileAccess.file_exists(TEST_SAVE.get_basename() + ".broken.json"):
+		return "must not write user:// for a broken save"
+	# どこにも無ければ、既定値を localStorage にだけ置く
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_SAVE))
+	s.box.clear()
+	s.load_file()
+	if s.box.keys() != [key] or FileAccess.file_exists(TEST_SAVE):
+		return "a fresh start must write only the storage: " + str(s.box.keys())
+	return ""
+
+
+# 保存の文字は、どの項目も上限いっぱいでも小さい(localStorage は同じサイトのゲームで共有。およそ 500 万文字)。
+func test_save_size_bound() -> String:
+	var d: Dictionary = Codec.defaults("WWWWWWWW")
+	for k in d["totals"]:
+		d["totals"][k] = B.SAVE_INT_MAX
+	for k in d["casino"]:
+		d["casino"][k] = B.SAVE_INT_MAX
+	for id in Ach.DEFS:
+		d["achievements"][id] = "2026-11-11"
+	for i in B.TOP_RUNS:
+		d["top_runs"].append({"score": B.SAVE_INT_MAX, "cleared": false, "draws": 51, "date": "2026-11-11", "mode": "versus"})
+	for m in range(1, 13):
+		for day in range(1, 6):
+			d["daily"]["2026-%02d-%02d" % [m, day]] = {"no": -B.SAVE_INT_MAX, "attempts": B.SAVE_INT_MAX, "score": B.SAVE_INT_MAX, "cleared": false, "draws": 51, "best_streak": 51}
+	d["daily_days"] = B.SAVE_INT_MAX
+	d["daily_streak"] = {"last": "2026-11-11", "count": B.SAVE_INT_MAX}
+	for mode in ["run", "daily"]:
+		d["current_" + mode] = {"mode": mode, "seed_text": "W".repeat(Codec.SEED_TEXT_MAX), "date": "2026-11-11",
+			"actions": "H".repeat(B.ACTIONS_MAX), "counter_shown": true, "run_ach": Ach.DEFS.keys()}
+	if d["daily"].size() != B.DAILY_KEEP:
+		return "daily entries %d" % d["daily"].size()
+	var n := JSON.stringify(d, "\t").length()
+	print("    largest save: %d chars" % n)
+	return "" if n <= 20000 else "largest save %d chars" % n
 
 
 # ---- Phase 2 ----

@@ -1,4 +1,4 @@
-# ブラウザの機能への橋(§2・前提 26)。URL の読み取り・クリップボードの読み取り・共有・タブ間の受け渡し。
+# ブラウザの機能への橋(§2・前提 26)。URL の読み取り・クリップボードの読み取り・共有・タブ間の受け渡し・保存の置き場。
 # JavaScriptBridge を使うのはこのファイルだけ(AC-37)。JavaScript の文を文字列で組み立てず、値は引数で渡す。
 # ブラウザの外(テスト・エディター)では、どの関数も「使えない」を返すだけで落ちない。
 extends RefCounted
@@ -32,6 +32,36 @@ func _callback(fn: Callable):
 	var cb = JavaScriptBridge.create_callback(fn)
 	_callbacks.append(cb)
 	return cb
+
+
+# ---- 保存の置き場(save/save_store.gd が使う)。localStorage は同じサイトのゲームで 1 つだが、書いてもほかのキーには触らない ----
+
+# キーの値。無い時・ブラウザの外・保存を止めたブラウザでは null。
+static func storage_get(key: String):
+	var s = _storage()
+	if s == null:
+		return null
+	var v = s.getItem(key)
+	return v if v is String else null
+
+
+# 書けたら真。setItem は一杯の時に投げ(橋が受け止めて null を返す)、通っても何も返さないので、読み直して確かめる。
+static func storage_set(key: String, text: String) -> bool:
+	var s = _storage()
+	if s == null:
+		return false
+	s.setItem(key, text)
+	var back = s.getItem(key)
+	return back is String and back == text
+
+
+# 保存を止めたブラウザでは、window.localStorage を読むだけで投げる。get_interface("localStorage") ではその例外が止まらないので、
+# window の項目として読む(橋が受け止めて null を返す)。
+static func _storage():
+	if not on_web():
+		return null
+	var w = JavaScriptBridge.get_interface("window")
+	return w.localStorage if w != null else null
 
 
 # ページの URL の「?」から後ろ(引数が無ければ空の文字)。
