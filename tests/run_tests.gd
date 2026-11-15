@@ -1017,6 +1017,10 @@ func test_play_layout() -> String:
 				return "%s: over %s missing or outside" % [tag, k]
 		if o["pause_hit"].size.x < 96 or o["pause_hit"].size.y < 96 or not o["pause_hit"].encloses(r["pause"]):
 			return "%s: pause hit area" % tag
+		# 手ほどきが、残り札の表示とその見出しを隠さない
+		for k in ["tut1", "tut2", "tut3"]:
+			if o[k].intersects(r["counter"]) or o[k].intersects(r["counter_label"]):
+				return "%s: %s covers the counter" % [tag, k]
 	return ""
 
 
@@ -1343,9 +1347,17 @@ func test_pages_build() -> String:
 			root.add_child(page)
 			for l in [true, false]:
 				page.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
-			# 遊び方: 見出し 3 つ、ルールと完走の行、操作の行、対戦の行。完走の行には balance.gd の点が出る
-			if script == HowtoScreen and err == "" and (page.body.get_child_count() != 3 + S.HOWTO_RULES.size() + 1 + S.HOWTO_OPS.size() + 1 or not page.body.get_child(1 + S.HOWTO_RULES.size()).text.contains("3,000")):
-				err = "the how-to page must list the rules, the clear bonus, the controls and versus"
+			# 遊び方: 見出し 5 つ、ルールと完走の行、操作の行、対戦の行、ブラックジャックとポーカーの行。
+			# 完走の行には balance.gd の点が、ディーラーの行には止まる合計が出る
+			var want_lines: int = 5 + S.HOWTO_RULES.size() + 1 + S.HOWTO_OPS.size() + 1 + S.HOWTO_BJ.size() + 1
+			if script == HowtoScreen and err == "" and (page.body.get_child_count() != want_lines or not page.body.get_child(1 + S.HOWTO_RULES.size()).text.contains("3,000")):
+				err = "the how-to page must list the rules, the clear bonus, the controls, versus and the casino"
+			if script == HowtoScreen and err == "":
+				var all_text := ""
+				for c in page.body.get_children():
+					all_text += c.text + "\n"
+				if "%" in all_text or not all_text.contains(str(B.BJ_DEALER_STAND)):
+					err = "the how-to page left a placeholder or lost the dealer's stand total"
 			if script == AchievementsScreen and err == "" and page.side.text != S.ACH_COUNT % [app.save.data["achievements"].size(), 35]:
 				err = "achievement count: " + page.side.text
 			# 通算の表・見出し・「まだ記録がありません」の 3 つと、追補 1 の見出しと表が 3 組
@@ -1906,7 +1918,7 @@ func test_invite_sdp() -> String:
 			if Invite.to_sdp(broken) != "" or not Invite.candidate_lines(broken).is_empty():
 				return "to_sdp must refuse %s %s" % [key, bad.c_escape()]
 	# 復元した文と候補の行から、同じ項目が取り出せる
-	var back := Invite.from_sdp(sdp, Array(Invite.candidate_lines(items)), false)
+	var back := Invite.from_sdp(sdp, Array(Invite.candidate_lines(items)))
 	for key in ["fp", "ufrag", "pwd", "cands", "derived"]:
 		if back.get(key) != items[key]:
 			return "from_sdp(to_sdp) lost " + key
@@ -1939,18 +1951,15 @@ func test_invite_sdp() -> String:
 		return "a name candidate must survive the code and the candidate line"
 	if not Invite.candidate_lines(named)[1].contains(" 0a1b2c3d-4e5f-6789-abcd-ef0123456789.local 54400 typ host"):
 		return "name candidate line: " + Invite.candidate_lines(named)[1]
-	# 合言葉を省く手: 書き換えた自分の文と、相手が復元する文とで、合言葉が同じになる
-	var munged := Invite.munge(sdp)
+	# 合言葉を省いた形のコードを読んだら、指紋から作った合言葉で文を書く
 	var made := Invite.derive(items["fp"])
 	var derived_items := _invite_items(Invite.KIND_INVITE, 2, true)
 	derived_items["fp"] = items["fp"]
 	if not Invite.is_ice_text(made[0]) or not Invite.is_ice_text(made[1]) or made[0].length() != 4 or made[1].length() != 24:
 		return "derived credentials: " + str(made)
 	for line in ["a=ice-ufrag:" + made[0], "a=ice-pwd:" + made[1]]:
-		if not line in munged.split("\r\n") or not line in Invite.to_sdp(derived_items).split("\r\n"):
-			return "both sides must use the derived credentials"
-	if munged.split("\r\n").size() != lines.size() or Invite.from_sdp(munged, [], true)["fp"] != items["fp"]:
-		return "munge must only rewrite the two credential lines"
+		if not line in Invite.to_sdp(derived_items).split("\r\n"):
+			return "a derived code must use the derived credentials"
 	return ""
 
 

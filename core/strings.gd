@@ -7,7 +7,8 @@ const SUBTITLE := "ハイ&ローの梯子"
 const VERSION_PREFIX := "v"
 
 # タイトル(Phase 3 は「つづきから」「ラン」「設定」)
-const BTN_RUN := "ラン"
+# 「ラン」だけでは遊び始める入口だと分からないので、タイトルのボタンだけ言い換える(画面の中の呼び名は「ラン」のまま)
+const BTN_RUN := "ひとりで遊ぶ"
 const BTN_CONTINUE := "つづきから"
 const BTN_SETTINGS := "設定"
 const CONFIRM_DISCARD := "途中のランを捨てて新しく始めますか"
@@ -46,7 +47,14 @@ const HOWTO_OPS := [
 	"・確保: ボタン。キーボードはスペース",
 	"・一時停止: 左上のボタン。キーボードは Esc",
 ]
-const HOWTO_VERSUS := "・対戦は、同じ並びの山札を全員が同時に遊び、制限時間のうちに確保した得点で順位が決まります。時間切れのとき、確保していないポットは点になりません"
+const HOWTO_BJ := [
+	"・合計が 21 に近いほうが勝ちです。21 を超えると負け(バースト)。J・Q・K は 10、A は 1 か 11 と数えます",
+	"・ディーラーは、合計が %s 以上になるまで引きます",
+	"・100 点賭けて勝つと 200 点、最初の 2 枚で 21(ブラックジャック)なら 250 点が戻ります。引き分けは賭けた点が戻ります",
+	"・ダブル: 最初の 2 枚のときだけ押せます。賭けた点を 2 倍にして、1 枚だけ引いて止まります",
+]
+const HOWTO_POKER := "・5 枚配られます。残す札を選んで、1 回だけ交換します。J 以上のペアから点が付き、倍率は画面の表のとおりです"
+const HOWTO_VERSUS :="・対戦は、同じ並びの山札を全員が同時に遊び、制限時間のうちに確保した得点で順位が決まります。時間切れのとき、確保していないポットは点になりません"
 
 # プレイ(FR-4・§9.1)
 const BTN_PAUSE := "一時停止"
@@ -56,6 +64,8 @@ const MODE_RUN := "ラン"
 const MODE_DAILY := "今日の山札 No.%d"
 const TOAST_HEAD := "実績を達成"
 const DECK_LEFT := "残り %d"
+const LIFE_LABEL := "ライフ"
+const COUNTER_LABEL := "残り札"
 const BTN_HIGH := "HIGH"
 const BTN_LOW := "LOW"
 const BTN_SAME := "同じ"
@@ -268,6 +278,7 @@ const RESULT_STREAK := "最大の連続"
 const RESULT_BANKS := "確保"
 const RESULT_BEST := "自己ベスト更新"
 const RESULT_NOT_RECORDED := "この回は記録に残りません"
+const RESULT_RETRY_DAILY := "「もう一度」は同じ山札で、記録に残りません"
 const BTN_COPY_RESULT := "結果をコピー"
 const RESULT_ACH := "達成した実績: %s"
 const RESULT_UNLOCK := "解放: %s"

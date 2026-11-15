@@ -60,6 +60,8 @@ var incoming
 var pot_label: Label
 var pot_num: Label
 var counter
+var counter_label: Label
+var lives_label: Label
 var btn := {}
 var fx
 var tut: Label
@@ -154,6 +156,10 @@ func _build() -> void:
 	add_child(mode_label)
 	pips = LifePips.new()
 	add_child(pips)
+	# 丸だけでは何の数か分からないので、見出しを添える
+	lives_label = Kit.label(S.LIFE_LABEL, T.FS_SMALL, T.W_BODY, T.TEXT_DIM)
+	lives_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	add_child(lives_label)
 	ladder = Ladder.new()
 	add_child(ladder)
 	deck = DeckPile.new()
@@ -171,6 +177,9 @@ func _build() -> void:
 	add_child(pot_num)
 	counter = CounterPanel.new()
 	add_child(counter)
+	counter_label = Kit.label(S.COUNTER_LABEL, T.FS_SMALL, T.W_BODY, T.TEXT_DIM)
+	counter_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	add_child(counter_label)
 	for key in ["high", "same", "bank", "low"]:
 		var b := BetButton.new()
 		b.setup(key, BTN_TITLES[key])
@@ -218,6 +227,8 @@ func relayout(is_landscape: bool, view_rect: Rect2) -> void:
 	if r.has("mode"):
 		Kit.place(mode_label, r["mode"])
 	Kit.place(pips, r["lives"])
+	var lv: Rect2 = r["lives"]
+	Kit.place(lives_label, Rect2(lv.position, Vector2(lv.size.x - 124, lv.size.y)))
 	ladder.vertical = landscape
 	Kit.place(ladder, r["ladder"])
 	Kit.place(deck, r["deck"])
@@ -231,6 +242,8 @@ func relayout(is_landscape: bool, view_rect: Rect2) -> void:
 	pot_num.pivot_offset = pot_num.size / 2
 	counter.visible = counter_on
 	Kit.place(counter, r["counter"])
+	counter_label.visible = counter_on
+	Kit.place(counter_label, r["counter_label"])
 	for key in btn:
 		Kit.place(btn[key], r[key])
 	Kit.place(fx, Rect2(Vector2.ZERO, size))

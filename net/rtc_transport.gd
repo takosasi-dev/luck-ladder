@@ -89,7 +89,7 @@ func poll() -> void:
 		var gathered := peer.get_gathering_state() == WebRTCPeerConnection.GATHERING_STATE_COMPLETE
 		if c["wait_until"] > 0 and (gathered or Time.get_ticks_msec() >= c["wait_until"]):
 			c["wait_until"] = 0
-			var items := Codec.from_sdp(c["sdp"], c["cands"], false, true, true)
+			var items := Codec.from_sdp(c["sdp"], c["cands"], true, true)
 			# 返事を作る側がもうつながっているなら、載せる候補が無くても返事を作れる(§9.16)。それ以外で候補が無ければ E-23
 			var bare_ok: bool = c["answer"] and peer.get_connection_state() == WebRTCPeerConnection.STATE_CONNECTED
 			if not items.is_empty() and items["cands"].is_empty() and not bare_ok:

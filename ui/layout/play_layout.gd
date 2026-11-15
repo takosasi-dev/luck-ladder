@@ -17,6 +17,7 @@ const LANDSCAPE := {
 	"bank": Rect2(1106, 262, 160, 180),
 	"low": Rect2(936, 452, 330, 180),
 	"counter": Rect2(14, 640, 1252, 66),
+	"counter_label": Rect2(176, 604, 140, 32),
 }
 
 const LANDSCAPE_OVER := {
@@ -38,6 +39,7 @@ const PORTRAIT := {
 	"card": Rect2(352, 200, 260, 364),
 	"pot": Rect2(160, 568, 400, 118),
 	"counter": Rect2(14, 690, 692, 78),
+	"counter_label": Rect2(14, 652, 140, 34),
 	"high": Rect2(14, 778, 692, 150),
 	"same": Rect2(14, 938, 341, 150),
 	"bank": Rect2(365, 938, 341, 150),
@@ -47,8 +49,9 @@ const PORTRAIT := {
 const PORTRAIT_OVER := {
 	"pause_hit": Rect2(14, 0, 120, 96),
 	"callout": Rect2(14, 186, 692, 70),
-	"tut1": Rect2(130, 712, 460, 48),
-	"tut2": Rect2(130, 694, 460, 48),
+	# 1・2 つ目は梯子の帯に重ねる(最初の 2 手は連続がまだ無い)。下に置くと残り札の表示を隠す
+	"tut1": Rect2(130, 120, 460, 48),
+	"tut2": Rect2(130, 120, 460, 48),
 	"tut3": Rect2(380, 884, 320, 44),
 	"toast": Rect2(160, 100, 400, 76),
 }

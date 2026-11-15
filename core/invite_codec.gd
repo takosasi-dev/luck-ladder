@@ -304,31 +304,13 @@ static func _sdp_value(sdp: String, key: String) -> String:
 
 
 # 自分の接続情報と候補の行から、項目(kind と reply_to を除く)を取り出す。足りなければ空の辞書。
-static func from_sdp(sdp: String, cand_lines: Array, derived: bool, with_mdns: bool = false, with_v6: bool = false) -> Dictionary:
+# 合言葉はいつも載せる(2026-11-13 の決定)。省いた形のコードは、読む側だけが受け付ける。
+static func from_sdp(sdp: String, cand_lines: Array, with_mdns: bool = false, with_v6: bool = false) -> Dictionary:
 	var hex := _sdp_value(sdp, "a=fingerprint:sha-256 ").replace(":", "")
 	if hex.length() != FP_SIZE * 2 or not hex.is_valid_hex_number():
 		return {}
-	var items := {"fp": hex.hex_decode(), "derived": derived, "cands": pick_candidates(cand_lines, with_mdns, with_v6)}
-	items["ufrag"] = "" if derived else _sdp_value(sdp, "a=ice-ufrag:")
-	items["pwd"] = "" if derived else _sdp_value(sdp, "a=ice-pwd:")
-	return items
-
-
-# 自分の接続情報の合言葉を、指紋から作った物に書き換える(前提 22 の実験)。
-static func munge(sdp: String) -> String:
-	var hex := _sdp_value(sdp, "a=fingerprint:sha-256 ").replace(":", "")
-	if hex.length() != FP_SIZE * 2 or not hex.is_valid_hex_number():
-		return sdp
-	var made := derive(hex.hex_decode())
-	var out := PackedStringArray()
-	for line in sdp.split("\n"):
-		var end := "\r" if line.ends_with("\r") else ""
-		if line.begins_with("a=ice-ufrag:"):
-			line = "a=ice-ufrag:" + made[0] + end
-		elif line.begins_with("a=ice-pwd:"):
-			line = "a=ice-pwd:" + made[1] + end
-		out.append(line)
-	return "\n".join(out)
+	return {"fp": hex.hex_decode(), "derived": false, "cands": pick_candidates(cand_lines, with_mdns, with_v6),
+		"ufrag": _sdp_value(sdp, "a=ice-ufrag:"), "pwd": _sdp_value(sdp, "a=ice-pwd:")}
 
 
 # 項目 → 相手の接続情報の文(候補は入れない。add_ice_candidate で別に渡す)。検査を通らない項目なら空の文字。

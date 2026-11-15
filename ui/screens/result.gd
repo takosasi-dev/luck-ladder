@@ -59,6 +59,9 @@ func _ready() -> void:
 		# FR-14: 2 回目からは、初回の結果を並べて出す
 		var first: Dictionary = app.save.data["daily"].get(date, {})
 		box.add_child(Kit.label(S.DAILY_FIRST % ShareText.group(first.get("score", 0)) + "  " + S.RESULT_NOT_RECORDED, T.FS_SMALL, T.W_BODY, T.TEXT_DIM))
+	elif s.mode == "daily":
+		# 初回の結果から「もう一度」を押すと、断りなく記録に残らない 2 回目が始まっていた
+		box.add_child(Kit.label(S.RESULT_RETRY_DAILY, T.FS_SMALL, T.W_BODY, T.TEXT_DIM))
 	grid = GridContainer.new()
 	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	grid.add_theme_constant_override("h_separation", 10)
