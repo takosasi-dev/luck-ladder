@@ -48,3 +48,8 @@ const BJ_NATURAL_DEN := 2
 const POKER_PAYS := [0, 1, 2, 3, 4, 6, 9, 25, 50, 250]
 # 追補 2: ダブルアップを続けられる回数
 const DOUBLE_UP_MAX := 5
+# 追補 2 §9.4: トライピークスの点(仮の値)。場の札 1 枚 × 続けて取った枚数、山のてっぺん、全部取った時、そのとき残った山 1 枚ごと
+const TP_CARD := 100
+const TP_PEAK := 1500
+const TP_CLEAR := 5000
+const TP_STOCK_LEFT := 200

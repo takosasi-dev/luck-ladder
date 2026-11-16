@@ -32,6 +32,8 @@ const ReviewScreen := preload("res://ui/screens/review.gd")
 const ChallengeCodec := preload("res://core/challenge_codec.gd")
 const ChallengeScreen := preload("res://ui/screens/challenge.gd")
 const DoubleUp := preload("res://core/double_up.gd")
+const TriPeaks := preload("res://core/tripeaks_rules.gd")
+const TriPeaksScreen := preload("res://ui/screens/tripeaks.gd")
 const SaveDataScreen := preload("res://ui/screens/save_data.gd")
 const ToastPart := preload("res://ui/parts/toast.gd")
 const BJ := preload("res://core/bj_rules.gd")
@@ -1534,7 +1536,7 @@ func test_pages_build() -> String:
 				page.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 			# 遊び方: 見出し 5 つ、ルールと完走の行、操作の行、対戦の 2 行、ブラックジャックとポーカーの行。
 			# 完走の行には balance.gd の点が、ディーラーの行には止まる合計が出る
-			var want_lines: int = 5 + S.HOWTO_RULES.size() + 1 + S.HOWTO_OPS.size() + 2 + S.HOWTO_BJ.size() + 2
+			var want_lines: int = 6 + S.HOWTO_RULES.size() + 1 + S.HOWTO_OPS.size() + 2 + S.HOWTO_BJ.size() + 2 + S.HOWTO_TRIPEAKS.size()
 			if script == HowtoScreen and err == "" and (page.body.get_child_count() != want_lines or not page.body.get_child(1 + S.HOWTO_RULES.size()).text.contains("3,000")):
 				err = "the how-to page must list the rules, the clear bonus, the controls, versus and the casino"
 			if script == HowtoScreen and err == "":
@@ -1546,8 +1548,9 @@ func test_pages_build() -> String:
 			if script == AchievementsScreen and err == "" and page.side.text != S.ACH_COUNT % [app.save.data["achievements"].size(), 35]:
 				err = "achievement count: " + page.side.text
 			# 通算の表・見出し・「まだ記録がありません」の 3 つと、追補 1 の見出しと表が 3 組
-			if script == RecordsScreen and err == "" and not played and page.body.get_child_count() != 9:
-				err = "empty records must show the empty line and the wallet sections"
+			# 通算・上位の見出しと空の行・持ち点・ブラックジャック・ポーカー・トライピークス(見出しと表で 2 つずつ)
+			if script == RecordsScreen and err == "" and not played and page.body.get_child_count() != 11:
+				err = "empty records must show the empty line and the wallet and game sections"
 			if script == SaveDataScreen and err == "":
 				page.import_box.text = "abc"
 				page._check_import()
@@ -1756,6 +1759,114 @@ func test_casino_save() -> String:
 	if store.data["casino"] != want:
 		return "erase must reset casino"
 	return ""
+
+
+# 追補 2 AC-B7: トライピークスの場の重なり・取れる札・点・全部取った・手詰まり。
+func test_tripeaks_rules() -> String:
+	for c in [[0, [3, 4]], [2, [7, 8]], [3, [9, 10]], [4, [10, 11]], [5, [12, 13]], [8, [16, 17]], [9, [18, 19]], [17, [26, 27]], [18, []], [27, []]]:
+		if TriPeaks.covered_by(c[0]) != c[1]:
+			return "covered_by(%d) = %s" % [c[0], str(TriPeaks.covered_by(c[0]))]
+	var r = TriPeaks.new(_ordered_deck())
+	var open := []
+	for i in TriPeaks.TABLEAU:
+		if r.is_open(i):
+			open.append(i)
+	if open != range(18, 28) or r.stock_left() != 23:
+		return "only the bottom row starts open: " + str(open)
+	# K と A はつながる。続けて取ると 100、200 と増える
+	r.waste = _c(1)
+	r.tableau[18] = _c(13)
+	r.tableau[19] = _c(12)
+	r.tableau[20] = _c(5)
+	if not r.can_take(18) or r.can_take(19) or r.can_take(20):
+		return "adjacent ranks with K and A joined"
+	var g1: int = r.take(18)["gain"]
+	var g2: int = r.take(19)["gain"]
+	if g1 != B.TP_CARD or g2 != B.TP_CARD * 2 or r.score != B.TP_CARD * 3 or not r.is_open(9) or r.is_open(10) or r.take(19)["result"] != "invalid":
+		return "streak points and opening: %d %d" % [g1, g2]
+	r.draw()
+	if r.streak != 0 or r.stock_left() != 22 or r.best_streak != 2:
+		return "drawing must reset the streak"
+	# 山のてっぺん: ボーナスが付く
+	r.removed[3] = true
+	r.removed[4] = true
+	r.tableau[0] = (r.waste + 1) % 52 if (r.waste % 13) != 12 else r.waste - 12
+	var p: Dictionary = r.take(0)
+	if not p["peak"] or p["gain"] != B.TP_CARD + B.TP_PEAK:
+		return "peak bonus: " + str(p)
+	# 全部取った: 残りの山 1 枚ごとの点
+	var c2 = TriPeaks.new(_ordered_deck())
+	for i in TriPeaks.TABLEAU - 1:
+		c2.removed[i] = true
+	c2.waste = _c(6)
+	c2.tableau[27] = _c(7)
+	c2.take(27)
+	if c2.ended != "clear" or c2.score != B.TP_CARD + B.TP_CLEAR + B.TP_STOCK_LEFT * 23:
+		return "clear score %d" % c2.score
+	# 手詰まり: 山が尽きて、取れる札が無い
+	var s = TriPeaks.new(_ordered_deck())
+	for i in TriPeaks.TABLEAU:
+		s.removed[i] = i != 18
+	s.tableau[18] = _c(1)
+	s.stock = PackedInt32Array([_c(7)])
+	s.draw()
+	if s.ended != "stuck" or s.draw()["result"] != "invalid" or s.take(18)["result"] != "invalid":
+		return "stuck when the stock is empty and nothing fits"
+	# 保存データ(E-B8): 無い・壊れた項目は既定値
+	var raw := Codec.defaults()
+	raw.erase("tripeaks")
+	if Codec.sanitize(raw)["data"]["tripeaks"] != {"games": 0, "clears": 0, "best": 0}:
+		return "a save without tripeaks gets defaults"
+	raw["tripeaks"] = {"games": -1, "clears": 3, "best": "x"}
+	if Codec.sanitize(raw)["data"]["tripeaks"] != {"games": 0, "clears": 3, "best": 0}:
+		return "broken tripeaks fields fall back one by one"
+	return ""
+
+
+# 追補 2 AC-B8・FR-P11: 画面を両方の配置に組み、札は画面に収まり、表の札の当たりは縦 96 以上。終えたら 1 回だけ記録し、途中で戻った回は記録しない。
+func test_tripeaks_screen() -> String:
+	Tokens.apply_settings({})
+	var app := StubApp.new(_fresh_store(), root)
+	app.sfx.set_volume(0)
+	var t = TriPeaksScreen.new()
+	t.setup(app)
+	root.add_child(t)
+	var err := ""
+	for l in [true, false]:
+		t.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+		var screen := Rect2(Vector2.ZERO, PlayLayout.size(l))
+		for i in TriPeaks.TABLEAU:
+			if err == "" and (not screen.encloses(t.card_rect(i)) or t.hit_rect(i).size.y < 96):
+				err = "card %d must fit and be easy to hit (%s)" % [i, "landscape" if l else "portrait"]
+		# 同じ段の札は重ならない
+		for i in range(18, 27):
+			if err == "" and t.card_rect(i).intersects(t.card_rect(i + 1)):
+				err = "bottom row cards overlap"
+	var backs := []
+	t.back_pressed.connect(func(): backs.append(1))
+	# 1 枚だけ残して取ると、全部取ったで終わり、記録は 1 回
+	for i in TriPeaks.TABLEAU - 1:
+		t.rules.removed[i] = true
+	t.rules.waste = _c(6)
+	t.rules.tableau[27] = _c(7)
+	t.last_input_frame = -1
+	t.take(27)
+	var tp: Dictionary = app.save.data["tripeaks"]
+	if err == "" and (not t.end_layer.visible or tp["games"] != 1 or tp["clears"] != 1 or tp["best"] != t.rules.score):
+		err = "a finished game must be recorded once: " + str(tp)
+	t._finish()
+	if err == "" and tp["games"] != 1:
+		err = "a game must not be recorded twice"
+	# もう一度 → 途中で戻ると記録しない
+	t._new_game()
+	t.last_input_frame = -1
+	t.draw_stock()
+	t.back.pressed.emit()
+	if err == "" and (backs.size() != 1 or tp["games"] != 1 or t.end_layer.visible):
+		err = "leaving in the middle must not record"
+	t.free()
+	app.free_nodes()
+	return err
 
 
 # 追補 2 §9.5・AC-B6: ダブルアップの戻りは当たりにくさで決まり、どの表の札でも平均が賭けた点と釣り合う(切り捨ての分だけ下回る)。

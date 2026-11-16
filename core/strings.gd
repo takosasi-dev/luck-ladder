@@ -186,6 +186,23 @@ const BTN_DRAW := "交換"
 const HOLD := "残す"
 const PK_HINT := "残す札を押して選び、「交換」を押します"
 
+# トライピークス(追補 2 §8)
+const BTN_TRIPEAKS := "トライピークス"
+const TP_SCORE := "得点"
+const TP_STOCK := "山 %d"
+const TP_STREAK := "%d 連続"
+const TP_RESULTS := {"clear": "全部取った", "stuck": "手詰まり"}
+const TP_TAKEN := "取った枚数"
+const TP_BEST_STREAK := "いちばん長く続けた枚数"
+const TP_GAMES := "遊んだ回数"
+const TP_CLEARS := "全部取った回数"
+const TP_BEST := "最高点"
+const HOWTO_TRIPEAKS := [
+	"・表の札と数字が 1 つ違う場の札(7 なら 6 か 8)を押して取ります。K と A もつながります",
+	"・取れる札が無いときは山を押して(スペースキーでも)、表の札を替えます。場を全部取ると終わりです",
+	"・続けて取るほど 1 枚の点が増えます。山をめくると 0 に戻ります。山のてっぺんの 3 枚にはボーナスがあります",
+]
+
 # ダブルアップ(追補 2 §7)
 const BTN_DOUBLE_UP := "ダブルアップ"
 const BTN_TAKE := "受け取る"

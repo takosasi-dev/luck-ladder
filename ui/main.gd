@@ -35,6 +35,7 @@ const PAGES := {
 	"howto": preload("res://ui/screens/howto.gd"),
 	"blackjack": preload("res://ui/screens/blackjack.gd"),
 	"poker": preload("res://ui/screens/poker.gd"),
+	"tripeaks": preload("res://ui/screens/tripeaks.gd"),
 }
 
 const LANDSCAPE := Vector2i(1280, 720)

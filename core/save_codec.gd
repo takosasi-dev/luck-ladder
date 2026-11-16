@@ -20,6 +20,8 @@ const CASINO_KEYS := [
 	["bj_hands", B.SAVE_INT_MAX, 0], ["bj_wins", B.SAVE_INT_MAX, 0], ["bj_naturals", B.SAVE_INT_MAX, 0],
 	["pk_hands", B.SAVE_INT_MAX, 0], ["pk_paid", B.SAVE_INT_MAX, 0], ["pk_best", 9, 0],
 ]
+# 追補 2 §9.6: トライピークスの記録。[項目, 上限, 既定値]。下限はどれも 0
+const TRIPEAKS_KEYS := [["games", B.SAVE_INT_MAX, 0], ["clears", B.SAVE_INT_MAX, 0], ["best", B.SAVE_INT_MAX, 0]]
 
 
 static func default_name(two_digits: int) -> String:
@@ -33,8 +35,12 @@ static func defaults(name: String = "") -> Dictionary:
 	var casino := {}
 	for k in CASINO_KEYS:
 		casino[k[0]] = k[2]
+	var tripeaks := {}
+	for k in TRIPEAKS_KEYS:
+		tripeaks[k[0]] = k[2]
 	return {
 		"casino": casino,
+		"tripeaks": tripeaks,
 		"version": VERSION,
 		"tutorial_done": false,
 		"settings": {
@@ -189,6 +195,10 @@ static func sanitize(raw) -> Dictionary:
 	var rc := _dict(raw.get("casino"))
 	for k in CASINO_KEYS:
 		d["casino"][k[0]] = _int_or(rc.get(k[0]), 0, k[1], k[2])
+	# 追補 2 E-B8: tripeaks の無い古い保存データ・壊れた項目には既定値が入る
+	var rtp := _dict(raw.get("tripeaks"))
+	for k in TRIPEAKS_KEYS:
+		d["tripeaks"][k[0]] = _int_or(rtp.get(k[0]), 0, k[1], k[2])
 
 	for id in _dict(raw.get("achievements")):
 		var date = raw["achievements"][id]

@@ -219,6 +219,16 @@ func casino_settle(returned: int, counts: Dictionary) -> void:
 	write()
 
 
+# 追補 2 FR-P8: トライピークスを 1 回終えたとき。途中でやめた回は呼ばない。
+func tripeaks_finish(score: int, cleared: bool) -> void:
+	var t: Dictionary = data["tripeaks"]
+	t["games"] = mini(t["games"] + 1, B.SAVE_INT_MAX)
+	if cleared:
+		t["clears"] = mini(t["clears"] + 1, B.SAVE_INT_MAX)
+	t["best"] = mini(maxi(t["best"], score), B.SAVE_INT_MAX)
+	write()
+
+
 func export_text() -> String:
 	return Codec.to_export(data)
 

@@ -102,6 +102,8 @@ func _ready() -> void:
 	versus = _button(S.BTN_VERSUS, "green", func(): page_pressed.emit("versus"), short, row)
 	# 追補 1 §7.1
 	_pair([[S.BTN_BJ, "blackjack"], [S.BTN_POKER, "poker"]], "green")
+	# 追補 2 FR-P1
+	_pair([[S.BTN_TRIPEAKS, "tripeaks"]], "green")
 	var ach := S.BTN_ACH + "  " + S.ACH_COUNT % [info.get("ach_done", 0), info.get("ach_total", 0)]
 	_pair([[ach, "achievements"], [S.BTN_COLLECTION, "collection"]])
 	_pair([[S.BTN_HOWTO, "howto"], [S.BTN_RECORDS, "records"], [S.BTN_SETTINGS, "settings"]])

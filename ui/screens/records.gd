@@ -42,6 +42,8 @@ func _fill() -> void:
 		[S.WALLET, [[S.WALLET, c["wallet"]], [S.REC_WALLET_PEAK, c["wallet_peak"]], [S.REC_REFILLS, c["refills"]]]],
 		[S.BTN_BJ, [[S.REC_HANDS, c["bj_hands"]], [S.REC_WINS, c["bj_wins"]], [S.REC_NATURALS, c["bj_naturals"]]]],
 		[S.BTN_POKER, [[S.REC_HANDS, c["pk_hands"]], [S.REC_PK_PAID, c["pk_paid"]], [S.REC_PK_BEST, S.POKER_HANDS[c["pk_best"]]]]],
+		# 追補 2 FR-P9
+		[S.BTN_TRIPEAKS, [[S.TP_GAMES, d["tripeaks"]["games"]], [S.TP_CLEARS, d["tripeaks"]["clears"]], [S.TP_BEST, d["tripeaks"]["best"]]]],
 	]:
 		section(part[0])
 		var cg := grid(cols)

@@ -27,6 +27,9 @@ func _fill() -> void:
 	section(S.BTN_POKER)
 	_line(S.HOWTO_POKER)
 	_line(S.HOWTO_DOUBLE_UP % B.DOUBLE_UP_MAX)
+	section(S.BTN_TRIPEAKS)
+	for text in S.HOWTO_TRIPEAKS:
+		_line(text)
 
 
 func _line(text: String) -> void:
