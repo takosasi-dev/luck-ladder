@@ -1243,6 +1243,14 @@ func test_play_screen_moves() -> String:
 		title.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 	if err == "" and title.versus.disabled:
 		err = "versus must be open"
+	# 横長は 2 列: ボタンの列は題名の列より右で、段は 82 以上、称号の行の上で終わる(「つづきから」がある 6 段でも)
+	title.relayout(true, Rect2(0, 0, 1280, 720))
+	var menu_h: float = title.menu.get_combined_minimum_size().y
+	if err == "" and (title.menu.position.x < title.logo.position.x + title.logo.size.x or title.menu.position.y < 0 or title.menu.position.y + menu_h > 668):
+		err = "landscape title: the menu must sit right of the logo and above the rank line (%s, h %d)" % [str(title.menu.position), menu_h]
+	for b in title.menu.find_children("*", "Button", true, false):
+		if err == "" and b.custom_minimum_size.y < 82:
+			err = "landscape title buttons must be 82 high: " + b.text
 	# 追補 1 §7.1: ブラックジャックとポーカーのボタンは押せて、main が知っている画面へ行く
 	var pages := []
 	title.page_pressed.connect(func(p: String): pages.append(p))

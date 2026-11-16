@@ -1,4 +1,4 @@
-# タイトル画面(FR-2・画面設計書 §3.1)。題名、梯子の段の灯り、「つづきから」「ラン」「今日の山札」
+# タイトル画面(FR-2・画面設計書 §3.1。横長は左に題名・右にボタンの 2 列)。題名、梯子の段の灯り、「つづきから」「ラン」「今日の山札」
 # 「対戦」(Phase 7 まで準備中で押せない)「ブラックジャック」「ポーカー」(追補 1)「実績」「コレクション」「記録」「設定」、称号、版を出す。
 # 途中のランがあるのに「ラン」を押したら捨てるかを確かめ(E-11)、今日の山札の 2 回目からは 1 行断ってから始める(FR-14)。
 extends Control
@@ -21,6 +21,11 @@ const RUNG_CYCLE := 3.2
 const DRIFT := [[0.02, 0.10, 14.0, -0.20], [0.20, 0.64, 10.0, 0.14], [0.36, 0.32, 17.0, 0.08], [0.52, 0.80, 12.0, -0.10],
 	[0.68, 0.14, 9.0, 0.22], [0.82, 0.52, 15.0, -0.16], [0.94, 0.88, 11.0, 0.05]]
 const DRIFT_SIZE := Vector2(150, 210)
+# 横長の 2 列: 左の題名の列の幅、右のボタンの列の位置と幅、段の高さ
+const LAND_LEFT_W := 560.0
+const LAND_MENU_X := 660.0
+const LAND_MENU_W := 580.0
+const LAND_ROW_H := 82.0
 const DRIFT_ALPHA := 0.13
 
 # {has_continue, notice, daily_no, daily_first(初回の得点。無ければ -1), daily_ongoing, ach_done, ach_total, title_rank, title_next(次の称号までの点。無ければ -1)}
@@ -219,21 +224,31 @@ func relayout(is_landscape: bool, view_rect: Rect2) -> void:
 	drift.visible = not T.lite
 	set_process(not T.lite)
 	rungs.queue_redraw()
-	# 横長は高さ 64 と 54(段が 1 つ増えたので詰めた。追補 1 の前提 A5)、縦長は当たりを 96 にする(画面設計書 §3.1)
-	for b in tall:
-		b.custom_minimum_size.y = 64 if landscape else 96
-	for b in short:
-		b.custom_minimum_size.y = 54 if landscape else 96
-	var menu_w := 560.0 if landscape else 660.0
-	var top := 16.0 if landscape else 130.0
-	logo.add_theme_font_size_override("font_size", T.FS_TITLE if landscape else T.FS_TITLE - 8)
-	Kit.place(logo, Rect2(0, top, size.x, 130))
-	Kit.place(rungs, Rect2(0, top + 130, size.x, 20))
-	Kit.place(sub, Rect2(0, top + 154, size.x, 34))
-	Kit.place(notice_label, Rect2(0, top + 190, size.x, 34))
-	var menu_top := top + 228.0 if landscape else top + 300.0
-	Kit.place(menu, Rect2((size.x - menu_w) / 2, menu_top, menu_w, 0))
-	Kit.place(rank_label, Rect2((size.x - 500) / 2, size.y - 52, 500, 40))
+	# 横長は左に題名、右にボタンの 2 列(画面設計書 §3.1)。段の高さは 82(スマホの横持ちで縮んでも 44 CSS px 前後)。
+	# 縦長は 1 列で、当たりを 96 にする
+	for b in tall + short:
+		b.custom_minimum_size.y = LAND_ROW_H if landscape else 96
+	if landscape:
+		var rows := menu.get_child_count()
+		var menu_h := rows * LAND_ROW_H + (rows - 1) * 10.0
+		Kit.place(menu, Rect2(LAND_MENU_X, maxf(24.0, (size.y - 30 - menu_h) / 2), LAND_MENU_W, 0))
+		var left := Rect2(40, 0, LAND_LEFT_W, size.y)
+		var top := 190.0
+		logo.add_theme_font_size_override("font_size", T.FS_TITLE - 12)
+		Kit.place(logo, Rect2(left.position.x, top, left.size.x, 130))
+		Kit.place(rungs, Rect2(left.position.x, top + 130, left.size.x, 20))
+		Kit.place(sub, Rect2(left.position.x, top + 154, left.size.x, 34))
+		Kit.place(notice_label, Rect2(left.position.x, top + 190, left.size.x, 34))
+		Kit.place(rank_label, Rect2(left.position.x + (left.size.x - 500) / 2, size.y - 52, 500, 40))
+	else:
+		var top := 130.0
+		logo.add_theme_font_size_override("font_size", T.FS_TITLE - 8)
+		Kit.place(logo, Rect2(0, top, size.x, 130))
+		Kit.place(rungs, Rect2(0, top + 130, size.x, 20))
+		Kit.place(sub, Rect2(0, top + 154, size.x, 34))
+		Kit.place(notice_label, Rect2(0, top + 190, size.x, 34))
+		Kit.place(menu, Rect2((size.x - 660) / 2, top + 300, 660, 0))
+		Kit.place(rank_label, Rect2((size.x - 500) / 2, size.y - 52, 500, 40))
 	Kit.place(version_label, Rect2(size.x - 220, size.y - 50, 200, 36))
 	if confirm_layer != null:
 		_open_confirm(confirm_args[0], confirm_args[1], confirm_args[2])
