@@ -1347,9 +1347,9 @@ func test_pages_build() -> String:
 			root.add_child(page)
 			for l in [true, false]:
 				page.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
-			# 遊び方: 見出し 5 つ、ルールと完走の行、操作の行、対戦の行、ブラックジャックとポーカーの行。
+			# 遊び方: 見出し 5 つ、ルールと完走の行、操作の行、対戦の 2 行、ブラックジャックとポーカーの行。
 			# 完走の行には balance.gd の点が、ディーラーの行には止まる合計が出る
-			var want_lines: int = 5 + S.HOWTO_RULES.size() + 1 + S.HOWTO_OPS.size() + 1 + S.HOWTO_BJ.size() + 1
+			var want_lines: int = 5 + S.HOWTO_RULES.size() + 1 + S.HOWTO_OPS.size() + 2 + S.HOWTO_BJ.size() + 1
 			if script == HowtoScreen and err == "" and (page.body.get_child_count() != want_lines or not page.body.get_child(1 + S.HOWTO_RULES.size()).text.contains("3,000")):
 				err = "the how-to page must list the rules, the clear bonus, the controls, versus and the casino"
 			if script == HowtoScreen and err == "":
@@ -2330,6 +2330,9 @@ func test_room_screen() -> String:
 		err = "a host room must show three empty seats"
 	if err == "" and (not S.HOWTO_RULES[0] in texts.call(host_room) or not S.HOWTO_VERSUS in texts.call(host_room)):
 		err = "a room must show how to play (a guest who came by invite never sees the tutorial)"
+	# 隠れると切られる秒数は、切る側と同じ値を出す
+	if err == "" and not S.HOWTO_AWAY % B.NET_SILENT_SEC in texts.call(host_room):
+		err = "a room must warn that leaving the browser for %d seconds cuts you off" % B.NET_SILENT_SEC
 	var start_button := func(): return host_room.frame.find_children("*", "Button", true, false).filter(func(b): return b.text == S.ROOM_START)[0]
 	if err == "" and not start_button.call().disabled:
 		err = "start must be disabled until a guest is connected"
@@ -2428,6 +2431,9 @@ func test_versus_play() -> String:
 	var err := ""
 	if hp.rivals.size() != 1 or gp.rivals.size() != 1 or not hp.vs_locked:
 		err = "a versus play shows one rival chip and starts locked for the countdown"
+	# 対戦は止まらないので、左上のボタンは「一時停止」でなく「抜ける」
+	if err == "" and hp.pause_face.get_child(0).text != S.BTN_VS_LEAVE:
+		err = "the versus pause button must say leave, not pause"
 	hp._act("H", false)
 	if err == "" and hp.st.actions != "":
 		err = "moves must be ignored during the countdown"

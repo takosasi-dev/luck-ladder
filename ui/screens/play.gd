@@ -138,7 +138,7 @@ func _mode_text() -> String:
 
 func _build() -> void:
 	pause_face = Kit.panel(Color(T.BG_DEEP, 0.5), T.R_BUTTON, Color(T.BRASS, 0.45), 2)
-	pause_face.add_child(Kit.label(S.BTN_PAUSE, T.FS_SMALL, T.W_NUM))
+	pause_face.add_child(Kit.label(S.BTN_VS_LEAVE if mode == "versus" else S.BTN_PAUSE, T.FS_SMALL, T.W_NUM))
 	add_child(pause_face)
 	# 見た目より広い当たり(96 × 96 以上。INV-11)
 	pause_hit = Button.new()

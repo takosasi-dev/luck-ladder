@@ -182,7 +182,7 @@ func _rebuild() -> void:
 	if mode in ["host", "guest"]:
 		# 招待から直接入った人は、手ほどきを見ないまま対戦が始まる。待っている間に読めるように、遊び方を出す
 		_text(S.BTN_HOWTO, T.FS_BODY, T.BRASS_HI)
-		for line in S.HOWTO_RULES + [S.HOWTO_VERSUS]:
+		for line in S.HOWTO_RULES + [S.HOWTO_VERSUS, S.HOWTO_AWAY % B.NET_SILENT_SEC]:
 			_text(line, T.FS_SMALL, T.TEXT).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	# 知らせは下の段の決まった欄に出す(上に差し込むと、押そうとしたボタンが動く)
 	note.text = message

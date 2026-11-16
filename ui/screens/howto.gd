@@ -20,6 +20,7 @@ func _fill() -> void:
 		_line(text)
 	section(S.BTN_VERSUS)
 	_line(S.HOWTO_VERSUS)
+	_line(S.HOWTO_AWAY % B.NET_SILENT_SEC)
 	section(S.BTN_BJ)
 	for text in S.HOWTO_BJ:
 		_line(text % B.BJ_DEALER_STAND if "%s" in text else text)
