@@ -156,6 +156,21 @@ class FixedPoker extends PokerScreen:
 		return fixed
 
 
+# 実行時エラー(警告は除く)を数える。Godot 4.7.2 で Logger が script のエラーを受け取ることは、試して確かめた(2026-11-16)
+class ErrorCounter extends Logger:
+	var errors := 0
+
+	func _log_error(_function: String, _file: String, _line: int, _code: String, _rationale: String, _editor_notify: bool, error_type: int, _script_backtraces: Array[ScriptBacktrace]) -> void:
+		if error_type != ERROR_TYPE_WARNING:
+			errors += 1
+
+	func _log_message(_message: String, _error: bool) -> void:
+		pass
+
+
+var error_counter := ErrorCounter.new()
+
+
 # 画面のテスト用の、main の代わり(保存・効果音・BGM と、設定を写した回数だけを持つ)。
 class StubApp extends RefCounted:
 	var save
@@ -219,6 +234,7 @@ func _process(_delta: float) -> bool:
 func _run_all() -> void:
 	# テストは同じ瞬間に続けて押すので、押し間違いの受け止めは切っておく(test_press_guard だけが入れる)
 	Kit.press_guard_ms = 0
+	OS.add_logger(error_counter)
 	var failed := 0
 	var total := 0
 	for m in get_method_list():
@@ -227,7 +243,11 @@ func _run_all() -> void:
 			continue
 		total += 1
 		var t0 := Time.get_ticks_msec()
+		var errors_before := error_counter.errors
 		var err: String = call(name)
+		# 実行時エラーで途中で止まった関数も "" を返すので、前は PASS と数えていた。テストの間に出たエラーを数えて落とす
+		if err == "" and error_counter.errors > errors_before:
+			err = "runtime error(s) during the test: %d" % (error_counter.errors - errors_before)
 		var ms := Time.get_ticks_msec() - t0
 		if err == "":
 			print("PASS %s (%d ms)" % [name, ms])
