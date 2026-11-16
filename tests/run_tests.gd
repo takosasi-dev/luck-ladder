@@ -1868,6 +1868,9 @@ func test_blackjack_screen() -> String:
 	t.fixed = _ordered_deck([_c(7), _c(7, 1)])
 	t.last_input_frame = -1
 	t._double()
+	# 重ね表示は、配った札より手前に描く(撮影で、手札の札の下に隠れていた)
+	if err == "" and t.du_layer.get_index() != t.get_child_count() - 1:
+		err = "the double up layer must be drawn above the hand"
 	if err == "" and (t.phase != "double" or SaveStore.new(TEST_SAVE).data["casino"]["wallet"] != 900 or not t.du_layer.visible or not t.du_sides["H"].text.contains("+400") or t.du_sides["H"].disabled):
 		err = "double up must take the return and show the quote: %s %s" % [t.phase, t.du_sides["H"].text]
 	t.last_input_frame = -1

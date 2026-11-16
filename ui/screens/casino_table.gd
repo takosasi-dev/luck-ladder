@@ -392,6 +392,8 @@ func _double() -> void:
 		return
 	du = DoubleUp.new(_new_deck(), du_amount)
 	phase = "double"
+	# 卓の札は配るたびに後から足されて手前に描かれるので、ダブルアップの重ね表示をいちばん手前へ移す
+	move_child(du_layer, get_child_count() - 1)
 	message.text = ""
 	du_shown.show_card(du.shown_card(), true)
 	du_next.show_card(-1, false)
