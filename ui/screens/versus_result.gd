@@ -25,6 +25,10 @@ var rematch: Button
 var wait_label: Label
 var used := false
 var confetti_done := false
+var leave_button: Button
+const ESC_CONFIRM_MS := 2000
+# この時刻(ms)までに 2 回目の Esc が来たら部屋を出る
+var esc_armed_until := 0
 
 
 func setup(app_ref, results_list: Array, run_info: Dictionary) -> void:
@@ -69,10 +73,10 @@ func _ready() -> void:
 		to_room.pressed.connect(func(): room_pressed.emit())
 		box.add_child(to_room)
 	wait_label = _text(S.VS_WAIT_REMATCH, T.FS_BODY, T.BRASS_HI)
-	var leave := Kit.button(S.ROOM_LEAVE, T.FS_BODY, "ghost")
-	leave.custom_minimum_size = Vector2(0, 96)
-	leave.pressed.connect(func(): leave_pressed.emit())
-	box.add_child(leave)
+	leave_button = Kit.button(S.ROOM_LEAVE, T.FS_BODY, "ghost")
+	leave_button.custom_minimum_size = Vector2(0, 96)
+	leave_button.pressed.connect(func(): leave_pressed.emit())
+	box.add_child(leave_button)
 	fx = Fx.new()
 	add_child(fx)
 	# §9.13: 対戦の終了は、1 位なら clear、それ以外は gameover の音
@@ -146,7 +150,15 @@ func relayout(landscape: bool, _view: Rect2) -> void:
 			fx.confetti(size.x, size.y)
 
 
+# Esc 1 回で部屋を閉じると、ホストの癖の 1 押しで全員が切れる。1 回目は「もう一度押すと出ます」と出し、2 秒のうちの 2 回目で出る
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
 		get_viewport().set_input_as_handled()
-		leave_pressed.emit()
+		if Time.get_ticks_msec() < esc_armed_until:
+			leave_pressed.emit()
+			return
+		esc_armed_until = Time.get_ticks_msec() + ESC_CONFIRM_MS
+		leave_button.text = S.ROOM_SURE
+		get_tree().create_timer(ESC_CONFIRM_MS / 1000.0).timeout.connect(func():
+			if is_instance_valid(leave_button) and Time.get_ticks_msec() >= esc_armed_until:
+				leave_button.text = S.ROOM_LEAVE)

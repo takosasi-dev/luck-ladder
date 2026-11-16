@@ -183,6 +183,7 @@ const POKER_HANDS := ["役なし", "J 以上のペア", "ツーペア", "スリ�
 const PAY_TIMES := "×%s"
 const BTN_DRAW := "交換"
 const HOLD := "残す"
+const PK_HINT := "残す札を押して選び、「交換」を押します"
 const REC_PK_PAID := "配当が付いた数"
 const REC_PK_BEST := "いちばん良い役"
 

@@ -133,6 +133,8 @@ func _show(i: int) -> void:
 
 func _after_deal() -> void:
 	_mark(Rules.evaluate(hand.cards))
+	# 「交換」を次へ進むボタンと思って、何も残さずに押す人がいるので、操作を 1 行で添える
+	notice.text = S.PK_HINT
 	_idle()
 
 
@@ -156,6 +158,7 @@ func _extra_key(keycode: int) -> bool:
 
 # 「交換」。勝負の段階のボタンはこれだけ。
 func _on_action(_key: String) -> void:
+	notice.text = ""
 	var kept := holds.duplicate()
 	hand.draw(kept)
 	holds.clear()

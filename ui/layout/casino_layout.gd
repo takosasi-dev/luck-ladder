@@ -4,7 +4,8 @@
 extends RefCounted
 
 const LANDSCAPE := {
-	"back": Rect2(14, 4, 150, 56),
+	# ほかの画面の「もどる」と同じ 150 × 96(横持ちのスマホで押せる高さにする)
+	"back": Rect2(14, 4, 150, 96),
 	"name": Rect2(340, 4, 600, 56),
 	"wallet_cap": Rect2(930, 4, 130, 56),
 	"wallet": Rect2(1066, 4, 200, 56),
@@ -29,7 +30,7 @@ const LANDSCAPE := {
 }
 
 const PORTRAIT := {
-	"back": Rect2(14, 8, 150, 88),
+	"back": Rect2(14, 8, 150, 96),
 	"name": Rect2(170, 8, 260, 88),
 	"wallet_cap": Rect2(436, 8, 270, 36),
 	"wallet": Rect2(436, 40, 270, 56),

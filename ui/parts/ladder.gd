@@ -70,13 +70,13 @@ func _draw() -> void:
 			var c := Vector2(size.x - 16.5, r.get_center().y) if vertical else Vector2(r.get_center().x, 15)
 			draw_circle(c, 6, T.BG_DEEP.lerp(T.BRASS_HI, f), true, -1.0, true)
 			draw_circle(c, 6, T.BRASS_HI, false, 2.0, true)
-	if streak > STEPS:
-		var jp := Kit.font(T.W_NUM)
-		var label := S.STREAK % streak
-		if vertical:
-			draw_string(jp, Vector2(0, 26), label, HORIZONTAL_ALIGNMENT_CENTER, size.x, T.FS_SMALL, T.BRASS_HI)
-		else:
-			draw_string(jp, Vector2(14, 23), label, HORIZONTAL_ALIGNMENT_LEFT, -1, T.FS_SMALL, T.BRASS_HI)
+	# 何の表か分かるように、今の連続をいつも出す(前は 11 連続からだけだった)
+	var jp := Kit.font(T.W_NUM)
+	var label := S.STREAK % streak
+	if vertical:
+		draw_string(jp, Vector2(0, 26), label, HORIZONTAL_ALIGNMENT_CENTER, size.x, T.FS_SMALL, T.BRASS_HI)
+	else:
+		draw_string(jp, Vector2(14, 23), label, HORIZONTAL_ALIGNMENT_LEFT, -1, T.FS_SMALL, T.BRASS_HI)
 
 
 func _glow(f: float) -> StyleBoxFlat:

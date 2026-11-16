@@ -24,6 +24,13 @@ func setup(app_ref) -> void:
 	app = app_ref
 
 
+# ほかの画面と同じく、Esc で閉じる(「もどる」と同じ)
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		get_viewport().set_input_as_handled()
+		closed.emit()
+
+
 func _ready() -> void:
 	scrim = ColorRect.new()
 	scrim.color = T.SCRIM

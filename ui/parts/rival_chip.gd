@@ -1,4 +1,4 @@
-# 相手の札(対戦。FR-41・画面設計書 §2.4): 名前、ライフの点 4 個、得点、状態(「12枚」「終了」「完走」「切断」)。
+# 相手の札(対戦。FR-41・画面設計書 §2.4): 名前、ライフの点 4 個、得点、状態(「12枚」「終了」「完走」「切断」)。縦長は 2 行、横長は 1 行。
 # 届いた値を見せるだけ。相手が確保する(得点が増える)と、縁が 0.4 秒光る。切断は 60% の濃さにする。
 extends Control
 
@@ -9,7 +9,10 @@ const Kit := preload("res://ui/kit.gd")
 const ShareText := preload("res://core/share_text.gd")
 
 const GLOW_SEC := 0.4
-const FS := 18
+# 縦長の 2 行と、横長の 1 行の字の大きさ(前は 2 行で 18 / 16 と、ゲームでいちばん小さかった)
+const FS_TWO := 22
+const FS_ONE := 20
+const TWO_LINE_MIN_H := 56.0
 
 var row := {}
 var glow := 0.0
@@ -52,17 +55,40 @@ func _draw() -> void:
 	var font := Kit.font(T.W_BODY)
 	var half := size.y / 2
 	var pad := 12.0
-	# 左: 上に名前、下にライフの点と状態。右: 得点
+	var two_lines := size.y >= TWO_LINE_MIN_H
+	var fs := FS_TWO if two_lines else FS_ONE
+	# 右: 得点
 	var score := ShareText.group(row["score"])
 	var num := Kit.num(T.W_NUM)
-	var score_w := num.get_string_size(score, HORIZONTAL_ALIGNMENT_LEFT, -1, FS + 6).x
-	draw_string(num, Vector2(size.x - pad - score_w, half + (FS + 6) * 0.36), score, HORIZONTAL_ALIGNMENT_LEFT, -1, FS + 6, T.BRASS_HI)
+	var score_w := num.get_string_size(score, HORIZONTAL_ALIGNMENT_LEFT, -1, fs + 4).x
+	draw_string(num, Vector2(size.x - pad - score_w, half + (fs + 4) * 0.36), score, HORIZONTAL_ALIGNMENT_LEFT, -1, fs + 4, T.BRASS_HI)
 	var left_w := size.x - pad * 3 - score_w
-	draw_string(font, Vector2(pad, half - 3), row["name"], HORIZONTAL_ALIGNMENT_LEFT, left_w, FS, T.TEXT)
+	var pips_w := B.LIVES_MAX * 14.0
+	if two_lines:
+		# 縦長(帯の高さ 62): 上に名前、下にライフの点と状態
+		draw_string(font, Vector2(pad, half - 4), _fit(row["name"], font, fs, left_w), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, T.TEXT)
+		_pips(Vector2(pad + 6, half + 13))
+		draw_string(font, Vector2(pad + pips_w + 8, half + 20), _fit(status_text(), font, fs - 2, left_w - pips_w - 8), HORIZONTAL_ALIGNMENT_LEFT, -1, fs - 2, T.TEXT_DIM)
+	else:
+		# 横長(帯の高さ 44)は 1 行: ライフの点、名前(終わった人・切れた人は状態)。2 行では字が小さくなりすぎた
+		_pips(Vector2(pad + 6, half))
+		var gone_or_done: bool = row["final"] or row["gone"] or row["ended"] != ""
+		var text: String = status_text() if gone_or_done else row["name"]
+		draw_string(font, Vector2(pad + pips_w + 8, half + fs * 0.36), _fit(text, font, fs, left_w - pips_w - 8), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, T.TEXT_DIM if gone_or_done else T.TEXT)
+
+
+func _pips(at: Vector2) -> void:
 	for i in B.LIVES_MAX:
-		var c := Vector2(pad + 6 + i * 14, half + 11)
+		var c := at + Vector2(i * 14, 0)
 		if i < row["lives"]:
 			draw_circle(c, 5, T.GOOD)
 		else:
 			draw_arc(c, 4, 0, TAU, 12, Color(T.TEXT_DIM, 0.7), 1.5)
-	draw_string(font, Vector2(pad + B.LIVES_MAX * 14 + 8, half + 17), status_text(), HORIZONTAL_ALIGNMENT_LEFT, left_w - B.LIVES_MAX * 14 - 8, FS - 2, T.TEXT_DIM)
+
+
+# 幅に収まるまで後ろを削る(長い名前が得点に重ならないように)。
+func _fit(text: String, font: Font, fs: int, max_w: float) -> String:
+	var t := text
+	while t.length() > 1 and font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > max_w:
+		t = t.left(-1)
+	return t

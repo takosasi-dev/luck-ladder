@@ -182,7 +182,14 @@ func _refresh() -> void:
 		var r := L.rects(landscape)
 		for i in B.BET_CHOICES.size():
 			var c: int = B.BET_CHOICES[i]
-			var b := Kit.button(ShareText.group(c), T.FS_BODY, "brass" if c == bet else "green")
+			var b := Kit.button(ShareText.group(c), T.FS_BODY, "green")
+			if c == bet:
+				# 真鍮色の地は「配る」だけにする。選んでいる点は、緑の地に太い真鍮色の縁と字で見分ける
+				var bg := T.BET_BOTTOM.lerp(T.BET_TOP, 0.5)
+				for st in ["normal", "hover"]:
+					b.add_theme_stylebox_override(st, Kit.box(bg, T.R_BUTTON, T.BRASS_HI, 5, true))
+				for st in ["font_color", "font_hover_color"]:
+					b.add_theme_color_override(st, T.BRASS_HI)
 			b.disabled = c > wallet
 			b.pressed.connect(_pick_bet.bind(c))
 			add_child(b)

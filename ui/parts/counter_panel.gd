@@ -27,7 +27,8 @@ func _draw() -> void:
 	var font := Kit.num()
 	var pad := 8.0
 	var w := (size.x - pad * 2) / 13.0
-	var dot := 3.2 if w > 60 else 2.6
+	# 縦長の欄(幅 52)でも、3 個と 4 個を見分けられる大きさにする(画面設計書 §2.4 の直径 6 以上)
+	var dot := 4.0
 	for i in 13:
 		var cell := Rect2(pad + i * w + 2, 5, w - 4, size.y - 10)
 		var n: int = counts[i]

@@ -1542,12 +1542,22 @@ func test_pages_build() -> String:
 			if script == SaveDataScreen and err == "":
 				page.import_box.text = "abc"
 				page._check_import()
-				if page.import_confirm.visible or page.note.text != S.IMPORT_FAILED:
-					err = "bad import text must be refused"
+				# 結果は「読み込む」のすぐ下の行に出す(いちばん上の欄では、横長でスクロールの外になった)
+				if page.import_confirm.visible or page.import_note.text != S.IMPORT_FAILED or page.import_note.get_index() != page.import_confirm.get_index() - 1:
+					err = "bad import text must be refused right under the button"
 				page.import_box.text = app.save.export_text()
 				page._check_import()
-				if err == "" and not page.import_confirm.visible:
+				if err == "" and (not page.import_confirm.visible or page.import_note.text != S.IMPORT_CONFIRM):
 					err = "good import text must ask before overwriting"
+				# Esc は「もどる」と同じ
+				var closed := [false]
+				page.closed.connect(func(): closed[0] = true)
+				var esc := InputEventKey.new()
+				esc.keycode = KEY_ESCAPE
+				esc.pressed = true
+				page._unhandled_input(esc)
+				if err == "" and not closed[0]:
+					err = "Esc must close the save data sheet"
 				if err == "" and page.erase_confirm.visible:
 					err = "erase needs a first press"
 			page.free()
@@ -1919,6 +1929,9 @@ func test_poker_screen() -> String:
 	t._finish_tween()
 	if err == "" and (t.busy or t.phase != "play" or t.marked != 1 or not t.pay_mark.visible or not t.cards[4].visible or t.actions["draw"].disabled or not t.back.disabled):
 		err = "after the deal the pair of jacks must be marked, got %d" % t.marked
+	# 配った後は、残す札の選び方を 1 行で添える
+	if err == "" and t.notice.text != S.PK_HINT:
+		err = "after the deal the hold hint must show"
 	t.last_input_frame = -1
 	t._toggle(0)
 	# 同じフレームの 2 つ目は捨てる(E-A4)
@@ -2675,6 +2688,18 @@ func test_versus_play() -> String:
 		err = "the host must be offered a rematch"
 	if err == "" and vr.box.find_children("*", "Button", true, false).filter(func(b): return b.text == S.VS_TO_ROOM).size() != 1:
 		err = "the host must be offered the way back to the room"
+	# Esc は 1 回目で「もう一度押すと出ます」、続けて 2 回目で出る(1 回で全員を切らない)
+	var left := [0]
+	vr.leave_pressed.connect(func(): left[0] += 1)
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	vr._unhandled_input(esc)
+	if err == "" and (left[0] != 0 or vr.leave_button.text != S.ROOM_SURE):
+		err = "the first Esc must only ask"
+	vr._unhandled_input(esc)
+	if err == "" and left[0] != 1:
+		err = "the second Esc must leave"
 	vr._rematch()
 	tick.call()
 	if err == "" and (host.phase != "playing" or guest.phase != "playing" or host.round_no != 2):

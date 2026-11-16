@@ -20,12 +20,20 @@ var rows: VBoxContainer
 var note: Label
 var import_box: TextEdit
 var import_confirm: Button
+var import_note: Label
 var back: Button
 var erase_confirm: Button
 
 
 func setup(app_ref) -> void:
 	app = app_ref
+
+
+# ほかの画面と同じく、Esc で閉じる(「もどる」と同じ)
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		get_viewport().set_input_as_handled()
+		closed.emit()
 
 
 func _ready() -> void:
@@ -92,6 +100,10 @@ func _fill() -> void:
 	import_box.custom_minimum_size = Vector2(0, 150)
 	rows.add_child(import_box)
 	_action(S.BTN_IMPORT, "green", _check_import)
+	# 読み込みの結果は、押したボタンのすぐ下に出す(いちばん上の欄では、横長だとスクロールの外で見えなかった)
+	import_note = Kit.label("", T.FS_SMALL, T.W_BODY, T.BRASS_HI)
+	import_note.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+	rows.add_child(import_note)
 	import_confirm = _action(S.BTN_OVERWRITE, "ghost", _do_import)
 	import_confirm.visible = false
 	_section(S.ERASE_HEAD)
@@ -103,7 +115,8 @@ func _fill() -> void:
 func _check_import() -> void:
 	var ok: bool = Codec.from_export(import_box.text)["ok"]
 	import_confirm.visible = ok
-	note.text = S.IMPORT_CONFIRM if ok else S.IMPORT_FAILED
+	import_note.text = S.IMPORT_CONFIRM if ok else S.IMPORT_FAILED
+	scroll.ensure_control_visible.call_deferred(import_confirm if ok else import_note)
 
 
 func _do_import() -> void:
@@ -111,7 +124,7 @@ func _do_import() -> void:
 		replaced.emit(S.IMPORT_DONE if app.save.writable else S.SAVE_UNAVAILABLE)
 	else:
 		import_confirm.visible = false
-		note.text = S.IMPORT_FAILED
+		import_note.text = S.IMPORT_FAILED
 
 
 func relayout(landscape: bool, view: Rect2) -> void:
