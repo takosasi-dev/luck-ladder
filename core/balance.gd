@@ -46,3 +46,5 @@ const BJ_NATURAL_NUM := 5
 const BJ_NATURAL_DEN := 2
 # ポーカーの倍率(§6.3)。並びは役の番号(0 = 役なし … 9 = ロイヤルフラッシュ)
 const POKER_PAYS := [0, 1, 2, 3, 4, 6, 9, 25, 50, 250]
+# 追補 2: ダブルアップを続けられる回数
+const DOUBLE_UP_MAX := 5

@@ -13,6 +13,8 @@ const L := preload("res://ui/layout/casino_layout.gd")
 const Deck := preload("res://core/deck.gd")
 const ShareText := preload("res://core/share_text.gd")
 const Card := preload("res://ui/parts/card.gd")
+const DoubleUp := preload("res://core/double_up.gd")
+const DU_SOUNDS := {"hit": "hit_2", "same": "tap", "miss": "miss"}
 
 const DEAL_KEYS := [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]
 const BET_KEYS := [KEY_1, KEY_2, KEY_3, KEY_4]
@@ -45,6 +47,17 @@ var bet_label: Label
 var bet_buttons: Array[Button] = []
 var deal: Button
 var actions := {}
+# 追補 2 §7 ダブルアップ。phase に "offer"(ダブルアップか受け取るか)と "double"(HIGH か LOW か)が加わる
+var du = null
+var du_amount := 0
+var du_round := 0
+var du_layer: Control
+var du_scrim: ColorRect
+var du_shown: Card
+var du_next: Card
+var du_caption: Label
+var du_offer: Array[Button] = []
+var du_sides := {}
 
 
 func setup(app_ref) -> void:
@@ -125,6 +138,7 @@ func _ready() -> void:
 		add_child(b)
 		actions[key] = b
 	_build_table()
+	_build_double_up()
 	message = Kit.label("", T.FS_CALLOUT, T.W_BLACK)
 	add_child(message)
 	app.bgm.play("bgm_play")
@@ -152,6 +166,19 @@ func relayout(is_landscape: bool, _view: Rect2) -> void:
 	for i in keys.size():
 		Kit.place(actions[keys[i]], L.slot(r["actions"], keys.size(), i))
 	_layout_table(r)
+	var area: Rect2 = r["du_area"]
+	Kit.place(du_layer, Rect2(Vector2.ZERO, size))
+	Kit.place(du_scrim, area)
+	var cs: Vector2 = r["du_card"]
+	var cy := area.position.y + (area.size.y - cs.y) / 2 + 20
+	Kit.place(du_shown, Rect2(Vector2(area.get_center().x - cs.x - 20, cy), cs))
+	Kit.place(du_next, Rect2(Vector2(area.get_center().x + 20, cy), cs))
+	Kit.place(du_caption, Rect2(area.position.x, area.position.y + 6, area.size.x, 44))
+	for i in du_offer.size():
+		Kit.place(du_offer[i], L.slot(r["actions"], 2, i))
+	var sides := du_sides.keys()
+	for i in sides.size():
+		Kit.place(du_sides[sides[i]], L.slot(r["actions"], 2, i))
 	_refresh()
 
 
@@ -196,8 +223,20 @@ func _refresh() -> void:
 			Kit.place(b, L.slot(r["bets"], B.BET_CHOICES.size(), i))
 			bet_buttons.append(b)
 	for key in actions:
-		actions[key].visible = not betting
+		actions[key].visible = phase == "play"
 		actions[key].disabled = busy or not _action_enabled(key)
+	if betting:
+		bet_label.text = S.BET_LABEL % ShareText.group(bet)
+	elif phase in ["offer", "double"]:
+		bet_label.text = S.BET_LABEL % ShareText.group(du_amount)
+	# ダブルアップの札は、次の「配る」まで残す(外れた札も見えるように)
+	du_layer.visible = du != null
+	for b in du_offer:
+		b.visible = phase == "offer"
+		b.disabled = busy
+	for side in du_sides:
+		du_sides[side].visible = phase == "double"
+		du_sides[side].disabled = busy or du == null or du.quote(side) == 0
 
 
 # ---- 流れ ----
@@ -246,6 +285,7 @@ func _deal() -> void:
 		return
 	phase = "play"
 	stake = bet
+	du = null
 	notice.text = ""
 	message.text = ""
 	_show_wallet()
@@ -289,7 +329,114 @@ func _end(text: String, color: Color, sound: String, returned: int) -> void:
 		_show_delta(returned, true)
 	app.sfx.play(sound)
 	quiet_until = Time.get_ticks_msec() + Kit.press_guard_ms
+	# 追補 2 FR-D1: 賭けた点より多く戻ったら、ダブルアップを持ちかける
+	if returned > stake:
+		_offer(returned, 0)
+	else:
+		_enter_bet()
+
+
+# ---- ダブルアップ(追補 2 §7) ----
+
+func _build_double_up() -> void:
+	du_layer = Control.new()
+	du_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	du_layer.visible = false
+	add_child(du_layer)
+	du_scrim = ColorRect.new()
+	du_scrim.color = Color(T.BG_DEEP, 0.9)
+	du_scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	du_layer.add_child(du_scrim)
+	du_shown = Card.new()
+	du_layer.add_child(du_shown)
+	du_next = Card.new()
+	du_layer.add_child(du_next)
+	du_caption = Kit.label("", T.FS_BODY, T.W_NUM, T.BRASS_HI)
+	du_layer.add_child(du_caption)
+	for item in [[S.BTN_DOUBLE_UP, "brass", _double], [S.BTN_TAKE, "green", _take]]:
+		var b := Kit.button(item[0], T.FS_BODY, item[1])
+		b.pressed.connect(item[2])
+		b.visible = false
+		add_child(b)
+		du_offer.append(b)
+	for side in ["H", "L"]:
+		var b := Kit.button("", T.FS_BODY, "green")
+		b.pressed.connect(_du_pick.bind(side))
+		b.visible = false
+		add_child(b)
+		du_sides[side] = b
+
+
+# round: これまでに当てた回数(0 は勝負に勝った直後)。
+func _offer(amount: int, round_no: int) -> void:
+	phase = "offer"
+	busy = false
+	du_amount = amount
+	du_round = round_no
+	_show_wallet()
+	_refresh()
+
+
+func _take() -> void:
+	if phase != "offer" or Time.get_ticks_msec() < quiet_until or not _accept():
+		return
 	_enter_bet()
+
+
+# FR-D3: 今の戻りを賭けて、引いて保存してから、表の札を出す。
+func _double() -> void:
+	if phase != "offer" or Time.get_ticks_msec() < quiet_until or not _accept():
+		return
+	if not save.casino_pay(du_amount):
+		_enter_bet()
+		return
+	du = DoubleUp.new(_new_deck(), du_amount)
+	phase = "double"
+	message.text = ""
+	du_shown.show_card(du.shown_card(), true)
+	du_next.show_card(-1, false)
+	du_caption.text = S.DU_ROUND % [du_round + 1, B.DOUBLE_UP_MAX] + "   " + S.DU_ASK
+	du_caption.add_theme_color_override("font_color", T.BRASS_HI)
+	for side in du_sides:
+		var q: int = du.quote(side)
+		du_sides[side].text = (S.BTN_HIGH if side == "H" else S.BTN_LOW) + "   " + (S.QUOTE % ShareText.group(q) if q > 0 else S.QUOTE_NONE)
+	_show_wallet()
+	_show_delta(-du_amount)
+	_refresh()
+
+
+# FR-D4: 結果を保存してから、次の札をめくる(動きの途中で閉じても結果は変わらない)。
+func _du_pick(side: String) -> void:
+	if phase != "double" or du == null or not _accept():
+		return
+	var res: Dictionary = du.play(side)
+	if res["result"] == "invalid":
+		return
+	save.casino_settle(res["returned"], {})
+	_begin()
+	tw.tween_interval(T.t(T.TABLE_GAP))
+	tw.tween_callback(func():
+		du_next.show_card(res["card"], true)
+		app.sfx.play("flip"))
+	tw.tween_interval(T.t(T.TABLE_GAP))
+	tw.tween_callback(_du_after.bind(res))
+	_refresh()
+
+
+func _du_after(res: Dictionary) -> void:
+	# 結果は札の上の見出しに出す(卓の真ん中の message は、ダブルアップの札に重なる)
+	du_caption.text = S.DU_RESULTS[res["result"]]
+	du_caption.add_theme_color_override("font_color", T.GOOD if res["result"] == "hit" else T.TEXT if res["result"] == "same" else T.BAD)
+	if res["returned"] > 0:
+		_show_delta(res["returned"], true)
+	_show_wallet()
+	app.sfx.play(DU_SOUNDS[res["result"]])
+	quiet_until = Time.get_ticks_msec() + Kit.press_guard_ms
+	# FR-D5: 当たって、まだ回数が残っていれば、もう一度持ちかける
+	if res["result"] == "hit" and du_round + 1 < B.DOUBLE_UP_MAX:
+		_offer(res["returned"], du_round + 1)
+	else:
+		_enter_bet()
 
 
 # D-A10: 勝負の途中は戻れない。

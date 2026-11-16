@@ -27,6 +27,9 @@ const LANDSCAPE := {
 	"pk_cards": Rect2(350, 200, 900, 210),
 	"pk_card": Vector2(150, 210),
 	"pk_message": Rect2(350, 436, 900, 64),
+	# 追補 2 ダブルアップ: 卓の上に重ねる場所と、札 2 枚の大きさ
+	"du_area": Rect2(14, 104, 1252, 440),
+	"du_card": Vector2(150, 210),
 }
 
 const PORTRAIT := {
@@ -52,6 +55,8 @@ const PORTRAIT := {
 	"pk_cards": Rect2(10, 580, 700, 180),
 	"pk_card": Vector2(128, 180),
 	"pk_message": Rect2(0, 772, 720, 64),
+	"du_area": Rect2(0, 180, 720, 680),
+	"du_card": Vector2(170, 238),
 }
 
 

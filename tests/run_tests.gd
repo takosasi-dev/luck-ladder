@@ -31,6 +31,7 @@ const HowtoScreen := preload("res://ui/screens/howto.gd")
 const ReviewScreen := preload("res://ui/screens/review.gd")
 const ChallengeCodec := preload("res://core/challenge_codec.gd")
 const ChallengeScreen := preload("res://ui/screens/challenge.gd")
+const DoubleUp := preload("res://core/double_up.gd")
 const SaveDataScreen := preload("res://ui/screens/save_data.gd")
 const ToastPart := preload("res://ui/parts/toast.gd")
 const BJ := preload("res://core/bj_rules.gd")
@@ -1533,7 +1534,7 @@ func test_pages_build() -> String:
 				page.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
 			# 遊び方: 見出し 5 つ、ルールと完走の行、操作の行、対戦の 2 行、ブラックジャックとポーカーの行。
 			# 完走の行には balance.gd の点が、ディーラーの行には止まる合計が出る
-			var want_lines: int = 5 + S.HOWTO_RULES.size() + 1 + S.HOWTO_OPS.size() + 2 + S.HOWTO_BJ.size() + 1
+			var want_lines: int = 5 + S.HOWTO_RULES.size() + 1 + S.HOWTO_OPS.size() + 2 + S.HOWTO_BJ.size() + 2
 			if script == HowtoScreen and err == "" and (page.body.get_child_count() != want_lines or not page.body.get_child(1 + S.HOWTO_RULES.size()).text.contains("3,000")):
 				err = "the how-to page must list the rules, the clear bonus, the controls, versus and the casino"
 			if script == HowtoScreen and err == "":
@@ -1757,6 +1758,72 @@ func test_casino_save() -> String:
 	return ""
 
 
+# 追補 2 §9.5・AC-B6: ダブルアップの戻りは当たりにくさで決まり、どの表の札でも平均が賭けた点と釣り合う(切り捨ての分だけ下回る)。
+func test_double_up() -> String:
+	var stake := 4800
+	for shown in range(1, 14):
+		for side in ["H", "L"]:
+			var probe = DoubleUp.new(_ordered_deck([_c(shown)]), stake)
+			var q: int = probe.quote(side)
+			if (shown == 13 and side == "H") or (shown == 1 and side == "L"):
+				if q != 0 or probe.play(side)["result"] != "invalid":
+					return "no winning card means no quote: %d %s" % [shown, side]
+				continue
+			var total := 0
+			var nexts := 0
+			for nx in 52:
+				if nx == _c(shown):
+					continue
+				var d = DoubleUp.new(_ordered_deck([_c(shown), nx]), stake)
+				var res: Dictionary = d.play(side)
+				var want := q if (side == "H" and nx % 13 + 1 > shown) or (side == "L" and nx % 13 + 1 < shown) else stake if nx % 13 + 1 == shown else 0
+				if res["returned"] != want or d.play(side)["result"] != "invalid":
+					return "shown %d %s next %d: %s" % [shown, side, nx % 13 + 1, str(res)]
+				total += res["returned"]
+				nexts += 1
+			# 平均の戻り = total / 51。賭けた点より多くならず、1 点より大きくは下回らない
+			if total > stake * nexts or total < (stake - 1) * nexts:
+				return "average return for %d %s: %d / %d" % [shown, side, total, nexts]
+	if DoubleUp.new(_ordered_deck([_c(7)]), 200).quote("H") != 400:
+		return "a 7 must pay exactly double"
+	return ""
+
+
+# 追補 2 FR-D5: ダブルアップは 5 回当てたら終わって、賭けの段階に戻る。持ち点は毎回の戻りで増える。
+func test_double_up_limit() -> String:
+	Tokens.apply_settings({})
+	CasinoTable.last_bets.clear()
+	var app := StubApp.new(_fresh_store(), root)
+	app.sfx.set_volume(0)
+	var t = FixedBlackjack.new()
+	t.setup(app)
+	root.add_child(t)
+	t.relayout(true, Rect2(0, 0, 1280, 720))
+	t.fixed = PackedInt32Array([_c(10), _c(10, 1), _c(7), _c(6, 1), _c(13)])
+	t._deal()
+	t._finish_tween()
+	t.last_input_frame = -1
+	t._act("stand")
+	t._finish_tween()
+	var err := ""
+	var want := 1100
+	for i in B.DOUBLE_UP_MAX:
+		if err == "" and t.phase != "offer":
+			err = "round %d must be offered" % (i + 1)
+		t.fixed = _ordered_deck([_c(7), _c(13)])
+		t.last_input_frame = -1
+		t._double()
+		t.last_input_frame = -1
+		t._du_pick("H")
+		t._finish_tween()
+		want += t.du.returned / 2
+	if err == "" and (t.phase != "bet" or app.save.data["casino"]["wallet"] != 7300 or want != 7300):
+		err = "after %d wins the double up must end: phase %s wallet %d" % [B.DOUBLE_UP_MAX, t.phase, app.save.data["casino"]["wallet"]]
+	t.free()
+	app.free_nodes()
+	return err
+
+
 # AC-A11: ブラックジャックの卓を両方の配置に組み、勝負を最後まで進める。動きの間と同じフレームの入力は捨てる。
 func test_blackjack_screen() -> String:
 	Tokens.apply_settings({})
@@ -1794,8 +1861,22 @@ func test_blackjack_screen() -> String:
 	if err == "" and (w["wallet"] != 1100 or w["bj_hands"] != 1 or t.wallet_num.text != "900"):
 		err = "the result must be saved at once and shown after the motion"
 	t.relayout(false, Rect2(0, 0, 720, 1280))
-	if err == "" and (t.phase != "bet" or t.busy or t.message.text != S.BJ_RESULTS["win"] or t.totals["dealer"].text != "26" or t.wallet_num.text != "1,100" or w["bj_wins"] != 1 or t.back.disabled):
-		err = "win by dealer bust: %s dealer %s wallet %s" % [t.message.text, t.totals["dealer"].text, t.wallet_num.text]
+	# 追補 2 FR-D1: 勝ったので、賭けの段階でなく「ダブルアップ」「受け取る」を出す。その間は戻れない(FR-D7)
+	if err == "" and (t.phase != "offer" or t.busy or t.message.text != S.BJ_RESULTS["win"] or t.totals["dealer"].text != "26" or t.wallet_num.text != "1,100" or w["bj_wins"] != 1 or not t.back.disabled or not t.du_offer[0].visible or t.deal.visible):
+		err = "win by dealer bust: %s dealer %s wallet %s phase %s" % [t.message.text, t.totals["dealer"].text, t.wallet_num.text, t.phase]
+	# ダブルアップ: 戻りの 200 を引いて保存し、表は 7。HIGH は 200 × 48 ÷ 24 = 400。次も 7 で「同じ数字」、200 が戻る
+	t.fixed = _ordered_deck([_c(7), _c(7, 1)])
+	t.last_input_frame = -1
+	t._double()
+	if err == "" and (t.phase != "double" or SaveStore.new(TEST_SAVE).data["casino"]["wallet"] != 900 or not t.du_layer.visible or not t.du_sides["H"].text.contains("+400") or t.du_sides["H"].disabled):
+		err = "double up must take the return and show the quote: %s %s" % [t.phase, t.du_sides["H"].text]
+	t.last_input_frame = -1
+	t._du_pick("H")
+	if err == "" and SaveStore.new(TEST_SAVE).data["casino"]["wallet"] != 1100:
+		err = "the double up result must be saved before the motion"
+	t._finish_tween()
+	if err == "" and (t.phase != "bet" or t.du_caption.text != S.DU_RESULTS["same"] or t.wallet_num.text != "1,100" or t.back.disabled):
+		err = "a same rank must give the stake back and end the double up: " + t.du_caption.text
 	# ダブル: 5・6 に K を引いて 21、ディーラーは 10・7
 	t._pick_bet(500)
 	t.fixed = PackedInt32Array([_c(5), _c(10, 1), _c(6), _c(7, 1), _c(13)])
@@ -1815,6 +1896,9 @@ func test_blackjack_screen() -> String:
 	# 勝負が付いたときの増えた点には「戻り」と付ける(賭けた点を含む総額)
 	if err == "" and t.delta_label.text != S.DELTA_RETURN % "2,000":
 		err = "the return must be labelled: " + t.delta_label.text
+	# 勝ったのでダブルアップを持ちかけている。受け取って賭けの段階へ
+	t.last_input_frame = -1
+	t._take()
 	# ダブルに足りない(E-A3)。バーストでは、ディーラーの裏の札を開けない
 	w["wallet"] = 150
 	t._pick_bet(100)
@@ -1858,7 +1942,8 @@ func test_blackjack_screen() -> String:
 	t.last_input_frame = -1
 	t._deal()
 	t._finish_tween()
-	if err == "" and (t.phase != "bet" or t.message.text != S.BJ_RESULTS["natural"] or w["wallet"] != 1075 or w["bj_naturals"] != 1 or t.totals["dealer"].text != "16"):
+	# 勝ったので、ダブルアップを持ちかける(50 点賭けた戻り 125 の総額が、そのまま次の賭ける点になる)
+	if err == "" and (t.phase != "offer" or t.du_amount != 125 or t.message.text != S.BJ_RESULTS["natural"] or w["wallet"] != 1075 or w["bj_naturals"] != 1 or t.totals["dealer"].text != "16"):
 		err = "natural: %s wallet %d" % [t.message.text, w["wallet"]]
 	t.free()
 	app.free_nodes()
@@ -1962,8 +2047,13 @@ func test_poker_screen() -> String:
 	if err == "" and (w["wallet"] != 1200 or w["pk_hands"] != 1 or w["pk_paid"] != 1 or w["pk_best"] != 3 or t.wallet_num.text != "900"):
 		err = "the result must be saved at once and shown after the motion: " + str(w)
 	t.relayout(false, Rect2(0, 0, 720, 1280))
-	if err == "" and (t.phase != "bet" or t.message.text != S.POKER_HANDS[3] or t.marked != 3 or t.wallet_num.text != "1,200" or not t.holds.is_empty() or t.cards[2].card != _c(11, 2) or t.cards[0].card != _c(11)):
+	if err == "" and (t.phase != "offer" or t.message.text != S.POKER_HANDS[3] or t.marked != 3 or t.wallet_num.text != "1,200" or not t.holds.is_empty() or t.cards[2].card != _c(11, 2) or t.cards[0].card != _c(11)):
 		err = "three of a kind: %s marked %d" % [t.message.text, t.marked]
+	# 「受け取る」で賭けの段階に戻る(持ち点はそのまま)
+	t.last_input_frame = -1
+	t._take()
+	if err == "" and (t.phase != "bet" or SaveStore.new(TEST_SAVE).data["casino"]["wallet"] != 1200):
+		err = "take must go back to betting and keep the wallet"
 	# 役なしを全部残す。いちばん良い役は下がらない
 	t.fixed = _ordered_deck([_c(2), _c(5, 1), _c(9, 2), _c(11, 3), _c(13)])
 	t.last_input_frame = -1

@@ -26,6 +26,7 @@ func _fill() -> void:
 		_line(text % B.BJ_DEALER_STAND if "%s" in text else text)
 	section(S.BTN_POKER)
 	_line(S.HOWTO_POKER)
+	_line(S.HOWTO_DOUBLE_UP % B.DOUBLE_UP_MAX)
 
 
 func _line(text: String) -> void:
