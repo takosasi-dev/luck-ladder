@@ -116,4 +116,5 @@ static func rebuild(seed_text: String, action_text: String, mode_value: String, 
 
 # 実績と通算に数えるラン(D-9: 今日の山札の 2 回目からは数えない)。
 func counts_for_records() -> bool:
-	return mode != "daily" or first_daily
+	# 挑戦状の回も数えない(追補 2 D-B2)
+	return mode != "challenge" and (mode != "daily" or first_daily)

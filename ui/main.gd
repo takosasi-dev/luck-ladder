@@ -19,6 +19,8 @@ const Result := preload("res://ui/screens/result.gd")
 const Settings := preload("res://ui/screens/settings.gd")
 const SaveData := preload("res://ui/screens/save_data.gd")
 const Review := preload("res://ui/screens/review.gd")
+const ChallengeScreen := preload("res://ui/screens/challenge.gd")
+const ChallengeCodec := preload("res://core/challenge_codec.gd")
 const Room := preload("res://ui/screens/room.gd")
 const VersusResult := preload("res://ui/screens/versus_result.gd")
 const RtcTransport := preload("res://net/rtc_transport.gd")
@@ -50,6 +52,8 @@ var bg_gradient: Gradient
 var stage: Control
 var screen: Control
 var overlay: Control
+# 遊んでいる挑戦状(ChallengeCodec.decode の結果)。結果の画面の「相手」と「もう一度」に使う
+var challenge := {}
 var landscape := true
 var view := Rect2(0, 0, 1280, 720)
 var notice := ""
@@ -81,6 +85,9 @@ func _ready() -> void:
 		show_room("relay", query)
 	elif RegEx.create_from_string("[?&]j=").search(query):
 		show_room("invited", query)
+	elif RegEx.create_from_string("[?&]c=").search(query):
+		# 追補 2 FR-C4: 挑戦状の URL。招待・返事が先(E-B1)
+		show_challenge(query)
 	else:
 		show_title()
 	_on_window_resized()
@@ -407,9 +414,27 @@ func _continue(mode: String) -> void:
 	_play(r["state"], r["stats"], mode, rec["date"], rec["run_ach"])
 
 
+# 追補 2 FR-C4: ?c= の後ろを読み、挑戦状の画面を出す。読めなくても画面は出す(断りと「タイトルへ」)。
+func show_challenge(query: String) -> void:
+	var m := RegEx.create_from_string("[?&]c=([A-Za-z0-9_-]+)").search(query)
+	var d: Dictionary = ChallengeCodec.decode(m.get_string(1) if m else "")
+	var c := ChallengeScreen.new()
+	c.setup(self, d)
+	c.start_pressed.connect(start_challenge.bind(d))
+	c.title_pressed.connect(show_title)
+	_swap(c)
+
+
+# FR-C5: 送った人と同じ山札で遊ぶ。途中の保存も記録もしない。
+func start_challenge(d: Dictionary) -> void:
+	challenge = d
+	_play(RunState.new(d["seed_text"]), RunStats.new("challenge"), "challenge", _today())
+
+
 func _play(st, stats, mode: String, date: String, run_ach: Array = []) -> void:
 	var p := Play.new()
-	p.setup(self, st, stats, mode, date, not bool(save.data["tutorial_done"]))
+	# 挑戦状の回は手ほどきを出さない(追補 2 前提 B3)
+	p.setup(self, st, stats, mode, date, mode != "challenge" and not bool(save.data["tutorial_done"]))
 	# 中断の前に取った実績も、結果の画面に出す
 	p.run_ach = run_ach.duplicate()
 	var best_before: int = save.data["totals"]["best_score"]
@@ -421,8 +446,14 @@ func _play(st, stats, mode: String, date: String, run_ach: Array = []) -> void:
 func _show_result(info: Dictionary, best_before: int) -> void:
 	bgm.play("bgm_title")
 	var r := Result.new()
+	if info["mode"] == "challenge":
+		# FR-C7: 相手の得点は、挑戦状を流し直して出した値
+		info["rival"] = {"name": challenge["name"], "score": challenge["state"].score}
 	r.setup(self, info, best_before)
-	# 「もう一度」: ランは新しい山札、今日の山札は同じ山札の次の回(§9.1)
-	r.retry_pressed.connect(start_daily if info["mode"] == "daily" else start_new_run)
+	# 「もう一度」: ランは新しい山札、今日の山札は同じ山札の次の回(§9.1)、挑戦状は同じ挑戦状をもう 1 回
+	if info["mode"] == "challenge":
+		r.retry_pressed.connect(start_challenge.bind(challenge))
+	else:
+		r.retry_pressed.connect(start_daily if info["mode"] == "daily" else start_new_run)
 	r.title_pressed.connect(show_title)
 	_swap(r)

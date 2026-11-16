@@ -131,6 +131,8 @@ func _ready() -> void:
 
 
 func _mode_text() -> String:
+	if mode == "challenge":
+		return S.MODE_CHALLENGE
 	return S.MODE_DAILY % day_no if mode == "daily" else S.MODE_RUN
 
 
@@ -390,15 +392,19 @@ func _act(side: String, show_press: bool) -> void:
 	else:
 		stats.on_guess(res, st)
 	if st.ended == "":
-		# FR-17: 条件を満たした手の直後に達成にして、通知を出す
-		var fresh: Array = save.judge_move(stats, date)
-		run_ach.append_array(fresh)
-		pending_toasts.append_array(fresh)
-		# 対戦は途中の保存をしない(D-29)。この手で取った実績も入れるので、判定の後に書く
-		if mode != "versus":
+		# FR-17: 条件を満たした手の直後に達成にして、通知を出す。挑戦状の回は実績に数えない(追補 2 FR-C6)
+		if mode != "challenge":
+			var fresh: Array = save.judge_move(stats, date)
+			run_ach.append_array(fresh)
+			pending_toasts.append_array(fresh)
+		# 対戦と挑戦状は途中の保存をしない(D-29・FR-C5)。この手で取った実績も入れるので、判定の後に書く
+		if mode in ["run", "daily"]:
 			save.save_current(mode, st.seed_text, date, st.actions, stats.counter_shown, run_ach)
-	elif mode != "versus":
+	elif mode in ["run", "daily"]:
 		_finish_run()
+	elif mode == "challenge":
+		# 保存データを変えない(FR-C6)。結果の画面が読む形だけをそろえる
+		end_result = {"attempt": 1, "new_unlocks": [], "title_before": 0, "title_after": 0, "new_achievements": []}
 	if mode == "versus":
 		# FR-41: 自分の手のたびに、自分の状態を送る。ランが終わったら final
 		if st.ended != "":
@@ -623,8 +629,8 @@ func _open_pause() -> void:
 		var key: String = item[1]
 		row.changed.connect(func(v: int): _set_volume(key, v))
 		box.add_child(row)
-	# 対戦は途中の保存をしない(D-29)ので、「保存されます」は出さない
-	if mode != "versus":
+	# 対戦と挑戦状は途中の保存をしない(D-29・FR-C5)ので、「保存されます」は出さない
+	if mode in ["run", "daily"]:
 		box.add_child(Kit.label(S.PAUSE_NOTE, T.FS_SMALL, T.W_BODY, T.TEXT_DIM))
 	pause_layer.add_child(box)
 	Kit.place(box, Rect2((size.x - 520) / 2, (size.y - 640) / 2, 520, 640))

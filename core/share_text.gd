@@ -26,3 +26,24 @@ static func build(mode: String, no: int, date: String, attempt: int, score: int,
 	if url != "":
 		lines.append(url)
 	return "\n".join(lines)
+
+
+# 挑戦状の文(追補 2 §9.2)。url は ?c= まで付いた物。
+static func challenge(player_name: String, score: int, cleared: bool, draws: int, best_streak: int, url: String) -> String:
+	return "\n".join(PackedStringArray([
+		"%s %s" % [S.SHARE_HEAD, S.SHARE_CHALLENGE],
+		player_name + " " + (S.SHARE_CLEAR if cleared else "") + S.SHARE_LINE % [group(score), draws, best_streak],
+		S.SHARE_CHALLENGE_GO % url,
+	]))
+
+
+# 挑戦状の回の結果の文(追補 2 §9.3)。outcome は "win" / "lose" / "draw"。
+static func challenge_result(score: int, cleared: bool, draws: int, best_streak: int, rival_score: int, outcome: String) -> String:
+	return "\n".join(PackedStringArray([
+		"%s %s" % [S.SHARE_HEAD, S.SHARE_CHALLENGE_RESULT],
+		(S.SHARE_CLEAR if cleared else "") + S.SHARE_LINE % [group(score), draws, best_streak] + S.SHARE_CHALLENGE_TAIL % [group(rival_score), S.CHALLENGE_OUTCOMES[outcome]],
+	]))
+
+
+static func outcome(score: int, rival_score: int) -> String:
+	return "win" if score > rival_score else "lose" if score < rival_score else "draw"

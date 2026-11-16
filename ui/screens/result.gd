@@ -11,6 +11,7 @@ const Kit := preload("res://ui/kit.gd")
 const ShareText := preload("res://core/share_text.gd")
 const DayIndex := preload("res://core/day_index.gd")
 const B := preload("res://core/balance.gd")
+const ChallengeCodec := preload("res://core/challenge_codec.gd")
 
 var app
 var info := {}
@@ -24,6 +25,8 @@ var grid: GridContainer
 var btn_box: HBoxContainer
 var buttons: Array[Button] = []
 var review_button: Button
+var challenge_button: Button
+var share_box: TextEdit
 var used := false
 
 
@@ -63,6 +66,13 @@ func _ready() -> void:
 	elif s.mode == "daily":
 		# 初回の結果から「もう一度」を押すと、断りなく記録に残らない 2 回目が始まっていた
 		box.add_child(Kit.label(S.RESULT_RETRY_DAILY, T.FS_SMALL, T.W_BODY, T.TEXT_DIM))
+	var rival_score := 0
+	if s.mode == "challenge":
+		# 追補 2 FR-C7: 相手の得点と勝ち負け(得点だけで比べる)
+		rival_score = info["rival"]["score"]
+		var outcome := ShareText.outcome(st.score, rival_score)
+		box.add_child(Kit.label(S.CHALLENGE_RIVAL % ShareText.group(rival_score), T.FS_BODY, T.W_BODY, T.TEXT))
+		box.add_child(Kit.label(S.CHALLENGE_OUTCOMES[outcome], T.FS_BODY + 6, T.W_NUM, T.GOOD if outcome == "win" else T.BAD if outcome == "lose" else T.TEXT))
 	grid = GridContainer.new()
 	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	grid.add_theme_constant_override("h_separation", 10)
@@ -75,7 +85,20 @@ func _ready() -> void:
 	review_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	review_button.custom_minimum_size = Vector2(240, 96)
 	review_button.pressed.connect(func(): app.open_review(st.seed_text, st.actions))
-	box.add_child(review_button)
+	var extra := HBoxContainer.new()
+	extra.alignment = BoxContainer.ALIGNMENT_CENTER
+	extra.add_theme_constant_override("separation", 14)
+	extra.add_child(review_button)
+	box.add_child(extra)
+	# 追補 2 FR-C1: 「ひとりで遊ぶ」の結果だけ、同じ山札の挑戦状を作れる
+	var challenge_text := ""
+	if s.mode == "run":
+		var code := ChallengeCodec.encode(st.seed_text, st.actions, app.save.data["settings"]["name"])
+		if code != "":
+			challenge_text = ShareText.challenge(app.save.data["settings"]["name"], st.score, st.ended == "clear", s.draws, s.best_streak, B.SHARE_URL + "?c=" + code)
+			challenge_button = Kit.button(S.BTN_CHALLENGE_COPY, T.FS_SMALL + 2, "ghost")
+			challenge_button.custom_minimum_size = Vector2(240, 96)
+			extra.add_child(challenge_button)
 	var ach: Array = info["new_achievements"]
 	if not ach.is_empty():
 		_wrap(S.RESULT_ACH % S.LIST_SEP.join(PackedStringArray(ach.map(func(id): return S.ACHIEVEMENTS[id][0]))), T.GOOD)
@@ -88,7 +111,9 @@ func _ready() -> void:
 	var p := DayIndex.parse(date)
 	var no := DayIndex.day_no(p[0], p[1], p[2]) if not p.is_empty() else 0
 	var share := ShareText.build(s.mode, no, date, attempt, st.score, st.ended == "clear", s.draws, s.best_streak, B.SHARE_URL)
-	var share_box := Kit.text_box(share, false)
+	if s.mode == "challenge":
+		share = ShareText.challenge_result(st.score, st.ended == "clear", s.draws, s.best_streak, rival_score, ShareText.outcome(st.score, rival_score))
+	share_box = Kit.text_box(share, false)
 	share_box.custom_minimum_size = Vector2(560, 138)
 	copy_note = Kit.label("", T.FS_SMALL, T.W_BODY, T.TEXT_DIM)
 	copy_note.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
@@ -110,6 +135,13 @@ func _ready() -> void:
 		scroll.ensure_control_visible(share_box))
 	btn_box.add_child(copy)
 	buttons.append(copy)
+	if challenge_button != null:
+		# 試すだけ(INV-10)。貼れない端末のために、共有の欄の中身を挑戦状の文に替えて、そこまで送る
+		challenge_button.pressed.connect(func():
+			DisplayServer.clipboard_set(challenge_text)
+			share_box.text = challenge_text
+			copy_note.text = S.COPY_TRIED
+			scroll.ensure_control_visible(share_box))
 	# 得点は 0 から 0.8 秒で数え上げる。控えめでは数え上げない
 	if T.lite:
 		_set_score(st.score)

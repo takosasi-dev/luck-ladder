@@ -29,6 +29,8 @@ const RecordsScreen := preload("res://ui/screens/records.gd")
 const CollectionScreen := preload("res://ui/screens/collection.gd")
 const HowtoScreen := preload("res://ui/screens/howto.gd")
 const ReviewScreen := preload("res://ui/screens/review.gd")
+const ChallengeCodec := preload("res://core/challenge_codec.gd")
+const ChallengeScreen := preload("res://ui/screens/challenge.gd")
 const SaveDataScreen := preload("res://ui/screens/save_data.gd")
 const ToastPart := preload("res://ui/parts/toast.gd")
 const BJ := preload("res://core/bj_rules.gd")
@@ -1294,6 +1296,131 @@ func test_table_palettes() -> String:
 	return ""
 
 
+# 追補 2 AC-B3: 挑戦状のコードは行って戻る。書き換え・形の崩れ・終わっていないラン・通らない名前は落ちる。
+func test_challenge_codec() -> String:
+	var seed_text := "LLR:1700000000:123456"
+	var all: String = _play("P1", seed_text)[0].actions
+	var who := String.chr(0x305F) + String.chr(0x308D) + String.chr(0x3046)
+	var code := ChallengeCodec.encode(seed_text, all, who)
+	var d: Dictionary = ChallengeCodec.decode(code)
+	if d["error"] != "" or d["seed_text"] != seed_text or d["actions"] != all or d["name"] != who:
+		return "round trip: " + str(d)
+	if d["state"].score != RunState.replay(seed_text, all)["state"].score:
+		return "the score must come from the replay"
+	# 1 文字の書き換え(検査値で落ちる)、長すぎる、空
+	var flipped := code.substr(0, 10) + ("A" if code[10] != "A" else "B") + code.substr(11)
+	for bad in [flipped, code + "x".repeat(400), ""]:
+		if ChallengeCodec.decode(bad)["error"] == "":
+			return "a broken code must be refused"
+	# 形は合うが中身が通らない物を、検査値つきで作って落ちることを見る
+	var raw := func(ver: int, s: String, a: String, n: PackedByteArray) -> String:
+		var b := PackedByteArray([ver, s.length()])
+		b.append_array(s.to_ascii_buffer())
+		b.append(a.length())
+		b.append_array(a.to_ascii_buffer())
+		b.append(n.size())
+		b.append_array(n)
+		return Invite.pack(b)
+	if ChallengeCodec.decode(raw.call(1, seed_text, all, who.to_utf8_buffer()))["error"] != "":
+		return "the hand-made code must match encode"
+	if ChallengeCodec.decode(raw.call(2, seed_text, all, who.to_utf8_buffer()))["error"] != "version":
+		return "another version must be told apart"
+	var cases := [
+		["LL1:test:1", all, who.to_utf8_buffer(), "seed of another mode"],
+		[seed_text, all.left(3), who.to_utf8_buffer(), "a run that has not ended"],
+		[seed_text, all + "H", who.to_utf8_buffer(), "a move after the end"],
+		[seed_text, all.replace("H", "X"), who.to_utf8_buffer(), "unknown move"],
+		[seed_text, all, "a\nb".to_utf8_buffer(), "control character in the name"],
+		[seed_text, all, "123456789".to_utf8_buffer(), "a name longer than 8"],
+		[seed_text, all, PackedByteArray([0xE3, 0x81]), "broken UTF-8"],
+	]
+	for c in cases:
+		if ChallengeCodec.decode(raw.call(1, c[0], c[1], c[2]))["error"] == "":
+			return "must refuse: " + c[3]
+	if ChallengeCodec.encode("LL1:test:1", all, who) != "" or ChallengeCodec.encode(seed_text, all, "") != "":
+		return "encode must refuse what decode refuses"
+	return ""
+
+
+# 追補 2 FR-C4: 挑戦状の画面は、読めた物には名前と得点と「はじめる」を、読めない物には断りと「タイトルへ」だけを出す。
+func test_challenge_screen() -> String:
+	Tokens.apply_settings({})
+	var app := StubApp.new(_fresh_store(), root)
+	var seed_text := "LLR:1700000000:123456"
+	var all: String = _play("P1", seed_text)[0].actions
+	var good: Dictionary = ChallengeCodec.decode(ChallengeCodec.encode(seed_text, all, "abc"))
+	var err := ""
+	for d in [good, ChallengeCodec.decode("broken")]:
+		var c = ChallengeScreen.new()
+		c.setup(app, d)
+		root.add_child(c)
+		for l in [true, false]:
+			c.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+		var texts: Array = c.box.find_children("*", "Label", true, false).map(func(x): return x.text)
+		var names: Array = c.box.find_children("*", "Button", true, false).map(func(x): return x.text)
+		var ok: bool = d["error"] == ""
+		if err == "" and ok and (not S.CHALLENGE_VS % ["abc", ShareText.group(d["state"].score)] in texts or names != [S.BTN_START, S.BTN_TO_TITLE]):
+			err = "a readable challenge shows the name, the score and start"
+		if err == "" and not ok and (not S.CHALLENGE_BAD in texts or names != [S.BTN_TO_TITLE]):
+			err = "an unreadable challenge only offers the title"
+		c.free()
+	app.free_nodes()
+	return err
+
+
+# 追補 2 AC-B4・AC-B5・FR-C1: 挑戦状の回は保存データを変えず、結果に相手の点と勝ち負けが出る。「ひとりで遊ぶ」の結果からは挑戦状を作れる。
+func test_challenge_play() -> String:
+	Tokens.apply_settings({})
+	var app := StubApp.new(_fresh_store(), root)
+	var seed_text := "LLR:1700000000:123456"
+	var all: String = _play("P1", seed_text)[0].actions
+	var before := JSON.stringify(app.save.data)
+	var r := RunStats.rebuild(seed_text, all.left(-1), "challenge", false, true)
+	var play = PlayScreen.new()
+	play.setup(app, r["state"], r["stats"], "challenge", "2026-11-16", false)
+	var got := []
+	play.finished.connect(func(info: Dictionary): got.append(info))
+	root.add_child(play)
+	play.relayout(true, Rect2(0, 0, 1280, 720))
+	play._act(all.right(1), true)
+	play._skip_flip()
+	play._finish_post()
+	var err := ""
+	if got.size() != 1:
+		err = "the challenge run must finish"
+	elif JSON.stringify(app.save.data) != before:
+		err = "a challenge run must not change the save data"
+	if err == "":
+		var info: Dictionary = got[0]
+		info["rival"] = {"name": "x", "score": info["state"].score + 1}
+		var res = ResultScreen.new()
+		res.setup(app, info, 0)
+		root.add_child(res)
+		res.relayout(false, Rect2(0, 0, 720, 1280))
+		var texts: Array = res.box.find_children("*", "Label", true, false).map(func(l): return l.text)
+		if not S.CHALLENGE_RIVAL % ShareText.group(info["state"].score + 1) in texts or not S.CHALLENGE_OUTCOMES["lose"] in texts:
+			err = "the result must show the rival score and the outcome"
+		elif res.challenge_button != null or not res.share_box.text.contains(S.SHARE_CHALLENGE_RESULT):
+			err = "a challenge result shares its own text and makes no new challenge"
+		res.free()
+	play.free()
+	# 「ひとりで遊ぶ」の結果: 挑戦状をコピーすると、共有の欄が挑戦状の文になり、中の URL は読める
+	if err == "":
+		var st = RunState.replay(seed_text, all)["state"]
+		var stats = RunStats.rebuild(seed_text, all, "run", false, true)["stats"]
+		var res = ResultScreen.new()
+		res.setup(app, {"state": st, "stats": stats, "date": "2026-11-16", "mode": "run", "result": {"attempt": 1, "new_unlocks": [], "title_before": 0, "title_after": 0}, "new_achievements": []}, 0)
+		root.add_child(res)
+		res.relayout(true, Rect2(0, 0, 1280, 720))
+		res.challenge_button.pressed.emit()
+		var m := RegEx.create_from_string("\\?c=([A-Za-z0-9_-]+)").search(res.share_box.text)
+		if not res.share_box.text.begins_with(S.SHARE_HEAD + " " + S.SHARE_CHALLENGE) or m == null or ChallengeCodec.decode(m.get_string(1))["actions"] != all:
+			err = "the run result must copy a readable challenge: " + res.share_box.text
+		res.free()
+	app.free_nodes()
+	return err
+
+
 # FR-14・D-9: 今日の山札をプレイ画面で 2 回終える。1 回目だけが記録に数えられ、2 回目の結果画面は初回を並べて出す。
 func test_daily_through_play_screen() -> String:
 	Tokens.apply_settings({})
@@ -1331,7 +1458,7 @@ func test_daily_through_play_screen() -> String:
 			# 追補 2 FR-R2: 振り返りのボタンは、そのランの種と操作の列で振り返りを開く
 			res.review_button.pressed.emit()
 			var st_done = got[0]["state"]
-			if err == "" and (res.review_button.get_parent() != res.box or app.reviewed.back() != [st_done.seed_text, st_done.actions]):
+			if err == "" and (not res.box.is_ancestor_of(res.review_button) or app.reviewed.back() != [st_done.seed_text, st_done.actions]):
 				err = "the review button must open the review of this run"
 			res.free()
 		play.free()

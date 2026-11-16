@@ -297,6 +297,20 @@ const REVIEW_HIT := "当たり"
 const REVIEW_MISS := "外れ"
 const REVIEW_GUESS := "%d   %s → %s   %s   %s   %s"
 const REVIEW_BANK := "%d   確保 +%s"
+
+# 挑戦状(追補 2 §6)
+const MODE_CHALLENGE := "挑戦状"
+const BTN_CHALLENGE_COPY := "挑戦状をコピー"
+const CHALLENGE_HEAD := "挑戦状"
+const CHALLENGE_VS := "%s の %s 点に挑戦"
+const CHALLENGE_NOTE := "同じ山札で遊びます。記録には残りません"
+const CHALLENGE_BAD := "この挑戦状は読み取れませんでした"
+const CHALLENGE_RIVAL := "相手 %s 点"
+const CHALLENGE_OUTCOMES := {"win": "勝ち", "lose": "負け", "draw": "引き分け"}
+const SHARE_CHALLENGE := "挑戦状"
+const SHARE_CHALLENGE_GO := "同じ山札で勝負: %s"
+const SHARE_CHALLENGE_RESULT := "挑戦状の結果"
+const SHARE_CHALLENGE_TAIL := "(相手 %s点・%s)"
 const LIST_SEP := "、"
 
 # 保存の既定値(§9.10)。後ろに 2 桁の数字を付ける
