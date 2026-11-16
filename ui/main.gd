@@ -18,6 +18,7 @@ const Play := preload("res://ui/screens/play.gd")
 const Result := preload("res://ui/screens/result.gd")
 const Settings := preload("res://ui/screens/settings.gd")
 const SaveData := preload("res://ui/screens/save_data.gd")
+const Review := preload("res://ui/screens/review.gd")
 const Room := preload("res://ui/screens/room.gd")
 const VersusResult := preload("res://ui/screens/versus_result.gd")
 const RtcTransport := preload("res://net/rtc_transport.gd")
@@ -227,6 +228,15 @@ func close_settings() -> void:
 	_close_overlay()
 	if screen != null:
 		screen.relayout(landscape, view)
+
+
+# 追補 2 FR-R2・FR-R5: 結果の画面の上に振り返りを重ねる。閉じると結果の画面がそのまま残る。
+func open_review(seed_text: String, actions: String) -> void:
+	var o := Review.new()
+	o.setup(self)
+	o.set_run(seed_text, actions)
+	o.back_pressed.connect(_close_overlay)
+	_open_overlay(o)
 
 
 func open_data() -> void:

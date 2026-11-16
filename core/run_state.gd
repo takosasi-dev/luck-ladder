@@ -99,7 +99,8 @@ func base_quote(side: String) -> int:
 # 結果: {result: "hit"/"miss"/"invalid", side, n, w, gain, card, pot_lost, life_up, ended}
 func guess(side: String) -> Dictionary:
 	var gain := quote(side)
-	if gain == 0:
+	# 終わった後の予想は受けない(外から来た操作の列を流すときの守り。画面は終わった後に呼ばない)
+	if gain == 0 or ended != "":
 		return {"result": "invalid"}
 	var n := remaining()
 	var w := winners(side)
@@ -147,6 +148,23 @@ func bank() -> Dictionary:
 # 1 文字の操作を流す。H・L・S は guess、B は bank。
 func apply(action: String) -> Dictionary:
 	return bank() if action == "B" else guess(action)
+
+
+# 振り返り(追補 2 FR-R1): 種と操作の列から、1 手ごとの中身を作る。{ok, steps}。途中で invalid が出たら ok は偽で steps は空。
+static func history(seed_value: String, action_text: String) -> Dictionary:
+	var st = new(seed_value)
+	var steps := []
+	for i in action_text.length():
+		var from_rank: int = st.cur
+		var res: Dictionary = st.apply(action_text[i])
+		if res["result"] == "invalid":
+			return {"ok": false, "steps": []}
+		if res["result"] == "banked":
+			steps.append({"kind": "bank", "amount": res["amount"]})
+		else:
+			steps.append({"kind": "guess", "side": res["side"], "from_rank": from_rank, "card": res["card"], "result": res["result"],
+				"gain": res["gain"], "pot_after": st.pot, "pot_lost": res["pot_lost"], "life_up": res["life_up"], "lives_after": st.lives})
+	return {"ok": true, "steps": steps}
 
 
 # 種と操作の列から復元する(D-10)。{ok, state}。途中で invalid が出たら ok は偽(E-9)。

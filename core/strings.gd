@@ -288,6 +288,15 @@ const RESULT_ACH := "達成した実績: %s"
 const RESULT_UNLOCK := "解放: %s"
 const RESULT_TITLE_UP := "称号が「%s」に上がりました"
 const BTN_RETRY := "もう一度"
+
+# 振り返り(追補 2 §5)
+const BTN_REVIEW := "振り返り"
+const REVIEW_WORST := "いちばん大きく失ったポット: %s 点(%d 手目)"
+const REVIEW_SIDES := {"H": "HIGH", "L": "LOW", "S": "同じ"}
+const REVIEW_HIT := "当たり"
+const REVIEW_MISS := "外れ"
+const REVIEW_GUESS := "%d   %s → %s   %s   %s   %s"
+const REVIEW_BANK := "%d   確保 +%s"
 const LIST_SEP := "、"
 
 # 保存の既定値(§9.10)。後ろに 2 桁の数字を付ける

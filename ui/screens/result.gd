@@ -23,6 +23,7 @@ var score_num: Label
 var grid: GridContainer
 var btn_box: HBoxContainer
 var buttons: Array[Button] = []
+var review_button: Button
 var used := false
 
 
@@ -69,6 +70,12 @@ func _ready() -> void:
 	box.add_child(grid)
 	for item in [[S.RESULT_DRAWS, str(s.draws)], [S.RESULT_HITS, S.RESULT_HITS_VALUE % [s.hits, s.misses]], [S.RESULT_SAME, str(s.same_hits)], [S.RESULT_STREAK, str(s.best_streak)], [S.RESULT_BANKS, str(s.banks)]]:
 		grid.add_child(Kit.stat(item[0], item[1]))
+	# 追補 2 FR-R2: 1 手ずつの振り返りを、この画面の上に重ねて開く
+	review_button = Kit.button(S.BTN_REVIEW, T.FS_SMALL + 2, "ghost")
+	review_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	review_button.custom_minimum_size = Vector2(240, 96)
+	review_button.pressed.connect(func(): app.open_review(st.seed_text, st.actions))
+	box.add_child(review_button)
 	var ach: Array = info["new_achievements"]
 	if not ach.is_empty():
 		_wrap(S.RESULT_ACH % S.LIST_SEP.join(PackedStringArray(ach.map(func(id): return S.ACHIEVEMENTS[id][0]))), T.GOOD)

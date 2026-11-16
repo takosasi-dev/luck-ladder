@@ -28,6 +28,7 @@ const AchievementsScreen := preload("res://ui/screens/achievements.gd")
 const RecordsScreen := preload("res://ui/screens/records.gd")
 const CollectionScreen := preload("res://ui/screens/collection.gd")
 const HowtoScreen := preload("res://ui/screens/howto.gd")
+const ReviewScreen := preload("res://ui/screens/review.gd")
 const SaveDataScreen := preload("res://ui/screens/save_data.gd")
 const ToastPart := preload("res://ui/parts/toast.gd")
 const BJ := preload("res://core/bj_rules.gd")
@@ -193,6 +194,11 @@ class StubApp extends RefCounted:
 
 	func open_data() -> void:
 		pass
+
+	var reviewed := []
+
+	func open_review(seed_text: String, actions: String) -> void:
+		reviewed.append([seed_text, actions])
 
 	func free_nodes() -> void:
 		sfx.free()
@@ -1322,6 +1328,11 @@ func test_daily_through_play_screen() -> String:
 			# 「結果をコピー」は、スクロールする中身ではなく下の固定の段にある(中身が長い回に隠れないように)
 			if res.buttons.size() != 3 or res.buttons[2].text != S.BTN_COPY_RESULT or res.buttons[2].get_parent() != res.btn_box:
 				err = "the copy button must sit in the fixed row"
+			# 追補 2 FR-R2: 振り返りのボタンは、そのランの種と操作の列で振り返りを開く
+			res.review_button.pressed.emit()
+			var st_done = got[0]["state"]
+			if err == "" and (res.review_button.get_parent() != res.box or app.reviewed.back() != [st_done.seed_text, st_done.actions]):
+				err = "the review button must open the review of this run"
 			res.free()
 		play.free()
 	var d: Dictionary = app.save.data
@@ -1329,6 +1340,44 @@ func test_daily_through_play_screen() -> String:
 		err = "only the first attempt counts: runs %d attempts %d" % [d["totals"]["runs"], d["daily"][date]["attempts"]]
 	if err == "" and not "A-23" in d["achievements"]:
 		err = "A-23 after the first daily"
+	app.free_nodes()
+	return err
+
+
+# 追補 2 AC-B1・AC-B2: 振り返りの中身は、途中までを流し直した状態と 1 手ずつ合う。終わった後の手と、知らない操作は受けない。
+func test_review() -> String:
+	var seed_text := "LL1:test:14"
+	var actions: String = _play("P1", seed_text)[0].actions
+	var h: Dictionary = RunState.history(seed_text, actions)
+	if not h["ok"] or h["steps"].size() != actions.length():
+		return "history must have one step per action"
+	var worst := 0
+	for k in actions.length():
+		var s: Dictionary = h["steps"][k]
+		var st = RunState.replay(seed_text, actions.left(k + 1))["state"]
+		if s["kind"] != ("bank" if actions[k] == "B" else "guess"):
+			return "step %d kind" % (k + 1)
+		if s["kind"] == "guess":
+			worst = maxi(worst, s["pot_lost"])
+			if s["pot_after"] != st.pot or s["lives_after"] != st.lives or s["card"] != st.current_card():
+				return "step %d does not match the replay" % (k + 1)
+	if RunState.history(seed_text, "X")["ok"] or RunState.history(seed_text, actions + "H")["ok"]:
+		return "unknown actions and moves after the end must be refused"
+	# 画面: 手の数だけ行があり、ポットを失っていれば、その上に 1 行
+	Tokens.apply_settings({})
+	var app := StubApp.new(_fresh_store(), root)
+	var page = ReviewScreen.new()
+	page.setup(app)
+	page.set_run(seed_text, actions)
+	root.add_child(page)
+	var err := ""
+	for l in [true, false]:
+		page.relayout(l, Rect2(Vector2.ZERO, PlayLayout.size(l)))
+		if err == "" and page.body.get_child_count() != actions.length() + (1 if worst > 0 else 0):
+			err = "review rows: %d for %d actions" % [page.body.get_child_count(), actions.length()]
+	if err == "" and worst > 0 and not page.body.get_child(0).text.contains(ShareText.group(worst)):
+		err = "the worst lost pot line: " + page.body.get_child(0).text
+	page.free()
 	app.free_nodes()
 	return err
 
